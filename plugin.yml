@@ -4,3 +4,4 @@ api: 5.0.0
 website: https://github.com/MaybeRickSanchez/PrimeSun-SkyMineZ
 author: Amirreza
 main: AM\SkyMineZ\Main
+description: "A SkyMine plugin for Empty-NG-PM that suffers from issues such as high latency (lag) and freezing (hanging). (reference Java server: play.bitonetop.com)"
