@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace AM\SkyMineZ\crate;
 
 use AM\SkyMineZ\Main;
+use AM\SkyMineZ\event\CrateOpenEvent;
 use AM\SkyMineZ\useless\ReadOnlyInventory;
 use AM\SkyMineZ\useless\TextParticle;
 use InvalidArgumentException;
@@ -55,7 +56,7 @@ final class Crate
 
     private bool $busy = false;
 
-    private ?Item $pendingReward = null;
+    private ?Reward $pendingReward = null;
 
     public function __construct(
         private Main              $main,
@@ -466,10 +467,16 @@ final class Crate
         }
     }
 
+    /**
+     * Starts an opening.
+     *
+     * The key is *not* consumed here: the caller decides that, after this method
+     * reported success. Consuming it here would hand out a reward even when the
+     * animation could not be started.
+     */
     public function open(
         Player $player
-    ): bool
-    {
+    ): bool {
         if ($this->busy) {
             $player->sendMessage(
                 '§eThis crate is currently opening.'
@@ -503,6 +510,10 @@ final class Crate
         }
 
         if ($inventory === null) {
+            $player->sendMessage(
+                '§cThis crate could not be loaded.'
+            );
+
             return false;
         }
 
@@ -516,13 +527,28 @@ final class Crate
             return false;
         }
 
+        if (CrateOpenEvent::hasHandlers()) {
+            $event = new CrateOpenEvent(
+                $this,
+                $player->getName(),
+                $winner
+            );
+
+            $event->call();
+
+            if ($event->isCancelled()) {
+                return false;
+            }
+
+            $winner = $event->getReward();
+        }
+
         $this->busy = true;
 
         $this->openingPlayerId =
             spl_object_id($player);
 
-        $this->pendingReward =
-            clone $winner;
+        $this->pendingReward = $winner;
 
         $inventory->clearAll();
 
@@ -530,11 +556,7 @@ final class Crate
             $inventory
         );
 
-        if (
-            !$player->setCurrentWindow(
-                $inventory
-            )
-        ) {
+        if (!$player->setCurrentWindow($inventory)) {
             $this->busy = false;
             $this->openingPlayerId = null;
             $this->pendingReward = null;
@@ -554,49 +576,63 @@ final class Crate
         return true;
     }
 
-    private function rollReward(): ?Item
+    /**
+     * Rolls one of the configured rewards, weighted by {@link Reward::getWeight()}.
+     *
+     * Returns a fresh copy, so the caller can never mutate the stored reward.
+     */
+    private function rollReward(): ?Reward
     {
         if ($this->rewards === []) {
             return null;
         }
 
-        $totalWeight =
-            $this->getTotalWeight();
+        $totalWeight = $this->getTotalWeight();
 
         if ($totalWeight <= 0) {
             return null;
         }
 
-        $random =
-            (mt_rand() / mt_getrandmax())
-            * $totalWeight;
+        $random = (
+            mt_rand() / mt_getrandmax()
+        ) * $totalWeight;
 
         $current = 0.0;
 
         foreach (
             $this->rewards as $reward
         ) {
-            $current +=
-                $reward->getWeight();
+            $current += $reward->getWeight();
 
             if ($random < $current) {
-                return $reward->getItem();
+                return $reward;
             }
         }
 
         return null;
     }
 
+    /**
+     * A throwaway item used as a decoration while the crate spins.
+     */
     private function getRandomDisplayItem(): ?Item
     {
-        return $this->rollReward();
+        $reward = $this->rollReward();
+
+        return $reward?->getItem();
     }
 
+    /**
+     * Plays the spin, then hands the winner over.
+     *
+     * Every frame is one delayed task rather than a loop, so a crate opening
+     * costs one task per frame for one crate and never blocks a tick. The frame
+     * delay grows towards the end so the spin looks like it is slowing down.
+     */
     private function playAnimation(
         Player $player,
-        Item   $winner
-    ): void
-    {
+        Reward $winner
+    ): void {
         $inventory = $this->getInventory();
 
         if ($inventory === null) {
@@ -608,7 +644,9 @@ final class Crate
             return;
         }
 
-        $steps = 36;
+        $steps = $this->main
+            ->getConfigManager()
+            ->getInt('crates.animation-steps', 36);
 
         $runStep = function (
             int $step
@@ -644,11 +682,11 @@ final class Crate
 
                 $inventory->setItem(
                     13,
-                    clone $winner
+                    $winner->getItem()
                 );
 
                 $this->showFloatingItem(
-                    $winner
+                    $winner->getItem()
                 );
 
                 $this->playWinEffects();
@@ -666,7 +704,9 @@ final class Crate
                                 );
                             }
                         ),
-                        20
+                        $this->main
+                            ->getConfigManager()
+                            ->getInt('crates.reveal-delay', 20)
                     );
 
                 return;
@@ -750,27 +790,46 @@ final class Crate
         $runStep(0);
     }
 
-    private function getAnimationDelay(
+    /**
+     * Ticks to wait before the next spin frame.
+     *
+     * The table comes from config (`crates.animation-delays`), keyed by the first
+     * frame of each range. A frame past the last key reuses that key's delay, so
+     * a server with more steps than the default table still looks correct.
+     */
+private function getAnimationDelay(
         int $step
-    ): int
-    {
-        if ($step < 12) {
-            return 2;
-        }
+    ): int {
+        $table = $this->main
+            ->getConfigManager()
+            ->get('crates.animation-delays');
 
-        if ($step < 22) {
+        if (!is_array($table) || $table === []) {
             return 3;
         }
 
-        if ($step < 29) {
-            return 4;
+        $delay = null;
+        $bestFrom = -1;
+
+        foreach ($table as $from => $ticks) {
+            if (!is_numeric($from) || !is_numeric($ticks)) {
+                continue;
+            }
+
+            $from = (int) $from;
+
+            if ($from > $step || $from <= $bestFrom) {
+                continue;
+            }
+
+            $bestFrom = $from;
+            $delay = (int) $ticks;
         }
 
-        if ($step < 34) {
-            return 5;
-        }
-
-        return 7;
+        return max(
+            1,
+            $delay ?? 3
+        );
     }
 
     private function showFloatingItem(
@@ -932,11 +991,15 @@ final class Crate
         }
     }
 
+    /**
+     * Closes the crate window and gives the item to the player. Leftovers are
+     * dropped at their feet rather than deleted, so a full inventory never eats
+     * a paid reward.
+     */
     private function finishOpening(
         Player $player,
-        Item   $winner
-    ): void
-    {
+        Reward $winner
+    ): void {
         $inventory = $this->getInventory();
 
         $this->destroyFloatingItem();
@@ -963,21 +1026,20 @@ final class Crate
             return;
         }
 
+        $item = $winner->getItem();
+
         $leftovers = $player
             ->getInventory()
-            ->addItem(
-                clone $winner
-            );
+            ->addItem($item);
 
-        foreach ($leftovers as $leftover) {
-            $player->dropItem(
-                $leftover
-            );
+        foreach (
+            $leftovers as $leftover
+        ) {
+            $player->dropItem($leftover);
         }
 
         $player->sendMessage(
-            '§dCrate Reward: §f' .
-            $winner->getName()
+            '§dCrate Reward: §f' . $item->getName()
         );
     }
 
@@ -1103,7 +1165,7 @@ final class Crate
                         1.0,
                         0.5
                     ),
-                    clone $reward
+                    $reward->getItem()
                 );
             }
 
@@ -1142,13 +1204,20 @@ final class Crate
     {
         $this->main
             ->getCrateManager()
-            ->saveCrate(
+            ->save(
                 $this->name
             );
     }
 
     /**
-     * @return array
+     * @return array{
+     *     world: string,
+     *     x: float,
+     *     y: float,
+     *     z: float,
+     *     keys: list<string>,
+     *     rewards: list<array{item: string, weight: float, type: string}>
+     * }
      */
     public function toArray(): array
     {
@@ -1156,17 +1225,19 @@ final class Crate
             'world' =>
                 $this->getWorld()->getFolderName(),
 
-            'x' => $this->position->x,
-            'y' => $this->position->y,
-            'z' => $this->position->z,
+            'x' => (float) $this->position->x,
+            'y' => (float) $this->position->y,
+            'z' => (float) $this->position->z,
 
             'keys' => $this->getKeys(),
 
-            'rewards' => array_map(
-                static fn(
-                    Reward $reward
-                ): array => $reward->toArray(),
-                $this->rewards
+            'rewards' => array_values(
+                array_map(
+                    static fn(
+                        Reward $reward
+                    ): array => $reward->toArray(),
+                    $this->rewards
+                )
             )
         ];
     }

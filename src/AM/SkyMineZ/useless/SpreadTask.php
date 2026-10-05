@@ -1,0 +1,269 @@
+<?php
+
+declare(strict_types=1);
+
+namespace AM\SkyMineZ\useless;
+
+use Closure;
+use pocketmine\plugin\PluginBase;
+use pocketmine\scheduler\Task;
+use pocketmine\scheduler\TaskHandler;
+
+/**
+ * Walks a list incrementally, visiting a fixed number of entries per tick, so
+ * iterating a large collection never spends a whole tick of the main thread.
+ *
+ * This is a one-shot task: as soon as every entry has been visited the handler
+ * cancels itself and the completion callback runs. It must therefore be
+ * scheduled with {@link TaskScheduler::scheduleDelayedTask()} and never with
+ * {@link TaskScheduler::scheduleRepeatingTask()}, otherwise every completed pass
+ * would keep re-running forever.
+ *
+ *     SpreadTask::spread($plugin, $bigList, 500, function($entry): void {
+ *         // at most 500 entries per tick
+ *     });
+ */
+final class SpreadTask extends Task
+{
+    /** @var list<mixed> */
+    private array $entries;
+
+    private readonly Closure $callback;
+
+    private readonly ?Closure $onComplete;
+
+    private int $index = 0;
+
+    private int $processed = 0;
+
+    private bool $finished = false;
+
+    /**
+     * @param iterable<mixed> $list entries to walk; arrays and Traversable are supported
+     * @param int $perTick how many entries to visit per tick, must be >= 1
+     * @param callable(mixed, int): void $callback receives the entry and its index
+     * @param (callable(): void)|null $onComplete run once after the last entry was visited
+     *
+     * @throws \InvalidArgumentException when $perTick is below 1
+     */
+    public function __construct(
+        iterable $list,
+        private readonly int $perTick,
+        callable $callback,
+        ?callable $onComplete = null
+    ) {
+        if ($perTick < 1) {
+            throw new \InvalidArgumentException(
+                'perTick must be greater than 0.'
+            );
+        }
+
+        $this->entries = self::flatten($list);
+        $this->callback = self::toClosure($callback);
+        $this->onComplete = $onComplete === null
+            ? null
+            : self::toClosure($onComplete);
+    }
+
+    /**
+     * Schedules a one-shot spread over $list.
+     *
+     * @param iterable<mixed> $list
+     * @param callable(mixed, int): void $callback
+     * @param (callable(): void)|null $onComplete
+     *
+     * @return TaskHandler<self>|null null when the list is empty or the plugin
+     *                           is already disabled; the callback still runs for
+     *                           an empty list so callers stay in sync
+     */
+    public static function spread(
+        PluginBase $plugin,
+        iterable $list,
+        int $perTick,
+        callable $callback,
+        ?callable $onComplete = null,
+        int $delay = 1
+    ): ?TaskHandler {
+        $task = new self(
+            $list,
+            $perTick,
+            $callback,
+            $onComplete
+        );
+
+        if ($task->getTotal() === 0) {
+            if ($onComplete !== null) {
+                $onComplete();
+            }
+
+            return null;
+        }
+
+        if (!$plugin->isEnabled()) {
+            return null;
+        }
+
+        return $plugin
+            ->getScheduler()
+            ->scheduleDelayedTask(
+                $task,
+                max(1, $delay)
+            );
+    }
+
+    /**
+     * Splits $list into batches of at most $batchSize entries, for callers that
+     * want the whole list but cannot afford one giant loop.
+     *
+     * @param iterable<mixed> $list
+     *
+     * @return list<list<mixed>>
+     *
+     * @throws \InvalidArgumentException when $batchSize is below 1
+     */
+    public static function batch(
+        iterable $list,
+        int $batchSize
+    ): array {
+        if ($batchSize < 1) {
+            throw new \InvalidArgumentException(
+                'batchSize must be greater than 0.'
+            );
+        }
+
+        $batches = [];
+        $current = [];
+
+        foreach (self::flatten($list) as $entry) {
+            $current[] = $entry;
+
+            if (count($current) >= $batchSize) {
+                $batches[] = $current;
+                $current = [];
+            }
+        }
+
+        if ($current !== []) {
+            $batches[] = $current;
+        }
+
+        return $batches;
+    }
+
+    public function onRun(): void
+    {
+        if ($this->finished) {
+            $this->getHandler()?->cancel();
+
+            return;
+        }
+
+        $total = count($this->entries);
+
+        if ($this->index >= $total) {
+            $this->finish();
+
+            return;
+        }
+
+        while (
+            $this->index < $total
+            && $this->processed < $this->perTick
+        ) {
+            /*
+             * The callback may cancel this task (for example when the player it
+             * belongs to disconnects). Reading the handler on every iteration
+             * would be wasteful, so the loop only watches the entry count and
+             * the next tick picks up the cancellation.
+             */
+            ($this->callback)(
+                $this->entries[$this->index],
+                $this->index
+            );
+
+            ++$this->index;
+            ++$this->processed;
+        }
+
+        if ($this->index >= $total) {
+            $this->finish();
+        }
+    }
+
+    public function finish(): void
+    {
+        if ($this->finished) {
+            return;
+        }
+
+        $this->finished = true;
+
+        $this->getHandler()?->cancel();
+
+        if ($this->onComplete !== null) {
+            ($this->onComplete)();
+        }
+    }
+
+    public function isFinished(): bool
+    {
+        return $this->finished;
+    }
+
+    public function getTotal(): int
+    {
+        return count($this->entries);
+    }
+
+    public function getProcessed(): int
+    {
+        return $this->processed;
+    }
+
+    public function getRemaining(): int
+    {
+        return max(
+            0,
+            $this->getTotal() - $this->processed
+        );
+    }
+
+    /**
+     * @return list<mixed>
+     */
+    public function getEntries(): array
+    {
+        return $this->entries;
+    }
+
+    private static function toClosure(callable $callable): Closure
+    {
+        return $callable instanceof Closure
+            ? $callable
+            : Closure::fromCallable($callable);
+    }
+
+    /**
+     * Materialises the list once so that later mutations of the caller's array
+     * cannot corrupt an in-flight task. Traversables are consumed eagerly,
+     * which also means generators have to be finite.
+     *
+     * @param iterable<mixed> $list
+     *
+     * @return list<mixed>
+     */
+    private static function flatten(iterable $list): array
+    {
+        if (is_array($list)) {
+            return array_values($list);
+        }
+
+        $entries = [];
+
+        foreach ($list as $entry) {
+            $entries[] = $entry;
+        }
+
+        return $entries;
+    }
+}

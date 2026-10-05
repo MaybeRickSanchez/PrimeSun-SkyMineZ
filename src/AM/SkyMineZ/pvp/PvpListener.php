@@ -13,46 +13,49 @@ use pocketmine\event\player\PlayerJoinEvent;
 use pocketmine\event\player\PlayerQuitEvent;
 use pocketmine\player\Player;
 
+/**
+ * Blocks damage between players who have PvP disabled.
+ *
+ * Both parties must have PvP enabled, otherwise a player could switch it off and
+ * still be attacked.
+ */
 final class PvpListener implements Listener
 {
-    private PvpManager $pvpManager;
+    private Main $main;
 
-    public function __construct()
+    public function __construct(Main $main)
     {
-        $this->pvpManager = Main::getInstance()
-            ->getPvpManager();
+        $this->main = $main;
     }
 
     public function onJoin(PlayerJoinEvent $event): void
     {
-        $this->pvpManager->loadPlayer(
+        $this->main->getPvpManager()->loadPlayer(
             $event->getPlayer()->getName()
         );
     }
 
     public function onQuit(PlayerQuitEvent $event): void
     {
-        $playerName = $event->getPlayer()->getName();
-
-        $this->pvpManager->savePlayer(
-            $playerName
-        );
-
-        $this->pvpManager->unloadPlayer(
-            $playerName
+        $this->main->getPvpManager()->unloadPlayer(
+            $event->getPlayer()->getName()
         );
     }
 
     public function onDamage(
         EntityDamageByEntityEvent $event
     ): void {
+        if ($event->isCancelled()) {
+            return;
+        }
+
         $victim = $event->getEntity();
 
         if (!$victim instanceof Player) {
             return;
         }
 
-        $attacker = $this->getAttacker(
+        $attacker = $this->resolveAttacker(
             $event->getDamager()
         );
 
@@ -60,27 +63,47 @@ final class PvpListener implements Listener
             return;
         }
 
-        if (
-            !$this->pvpManager->getPlayerState(
-                $attacker->getName()
-            )
-        ) {
-            $event->cancel();
+        $manager = $this->main->getPvpManager();
 
+        if ($manager->canDamage(
+            $attacker->getName(),
+            $victim->getName()
+        )) {
             return;
         }
 
+        $event->cancel();
+
+        $config = $this->main->getConfigManager();
+
+        /*
+         * Only nag the victim when the attacker is the one who turned PvP off.
+         * Being hit by someone who is fine themselves is not confusing.
+         */
         if (
-            !$this->pvpManager->getPlayerState(
-                $victim->getName()
-            )
+            $manager->getState($attacker->getName())
         ) {
-            $event->cancel();
+            $message = $config->message(
+                'pvp.disabled-message',
+                [
+                    'player' => $attacker->getName()
+                ]
+            );
+
+            if ($message !== '') {
+                $victim->sendMessage(
+                    $config->getPrefix() . $message
+                );
+            }
         }
     }
 
-    private function getAttacker(
-        Entity $damager
+    /**
+     * Resolves the player behind a damage source, following projectiles back to
+     * their owner.
+     */
+    private function resolveAttacker(
+        ?Entity $damager
     ): ?Player {
         if ($damager instanceof Player) {
             return $damager;

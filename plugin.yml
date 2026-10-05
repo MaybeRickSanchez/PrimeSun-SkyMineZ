@@ -1,7 +1,21 @@
 name: SkyMineZ
-version: 1.0.0
-api: 5.0.0
+main: AM\SkyMineZ\Main
+version: 1.1.0
+api: 5.44.0
 website: https://github.com/MaybeRickSanchez/PrimeSun-SkyMineZ
 author: Amirreza
-main: AM\SkyMineZ\Main
 description: "A SkyMine plugin for Empty-NG-PM that suffers from issues such as high latency (lag) and freezing (hanging). (reference Java server: play.bitonetop.com)"
+load: POSTWORLD
+
+# NOTE: commands are intentionally NOT declared here. They are registered in
+# code by AM\SkyMineZ\command\CommandRegistry (description, usage, permission
+# and aliases all live on the command classes). Declaring them here too would
+# create a second, executor-less PluginCommand that squats the bare label and
+# shadows the real implementation.
+permissions:
+  skyminez.use:
+    description: Use /skymine - menu, PvP toggle, sidebar toggle, stats, selection markers
+    default: true
+  skyminez.admin:
+    description: Create and delete crates, mines, outposts, slappers and leaderboards, manage balances, reload
+    default: op

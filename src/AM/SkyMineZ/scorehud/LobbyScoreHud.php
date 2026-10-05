@@ -5,10 +5,17 @@ declare(strict_types=1);
 namespace AM\SkyMineZ\scorehud;
 
 use AM\SkyMineZ\Main;
-use AM\SkyMineZ\miner\Miner;
+use AM\SkyMineZ\useless\NumberFormatter;
 use pocketmine\player\Player;
 
-class LobbyScoreHud
+/**
+ * The sidebar players see once they leave the spawn area.
+ *
+ * Every line comes from `scoreboard.lobby.lines` in config.yml, with
+ * {placeholders} replaced. A missing placeholder is left as-is so a typo is
+ * visible in-game instead of silently vanishing.
+ */
+final class LobbyScoreHud
 {
     public function __construct(
         private Main $main
@@ -17,7 +24,12 @@ class LobbyScoreHud
 
     public function getTitle(): string
     {
-        return '§dSkyMine';
+        return $this->main
+            ->getConfigManager()
+            ->getString(
+                'scoreboard.lobby.title',
+                '§d§lSkyMine'
+            );
     }
 
     /**
@@ -26,152 +38,56 @@ class LobbyScoreHud
     public function getLines(
         Player $player
     ): array {
-        $miner =
-            $this->main
-                ->getMinerManager()
-                ->getOrLoad(
-                    $player->getName()
-                );
-
-        $money = $this->main->getMoneyEconomy()->get($player->getName());
-
-        $gold =$this->main->getGoldEconomy()->get($player->getName());
-
-        $mined =
-            $miner->getMined();
-
-        $deaths =
-            $miner->getDeaths();
-
-        $killStreak =
-            $miner->getKillStreak();
-
-        return [
-            '§f',
-            '§d' . $player->getName(),
-            '§f',
-            '§eGOLD: §f' .
-            self::formatNumber($gold),
-            '§eMONEY: §f' .
-            self::formatNumber($money),
-            '§eMINED: §f' .
-            self::formatNumber($mined),
-            '§eDEATHS: §f' .
-            self::formatNumber($deaths),
-            '§eKILL STREAK: §f' .
-            $killStreak . ' §7(0)',
-            '§eSKILL LEVEL: §f0',
-            '§eISLAND LEVEL: §f0',
-            '§eSHARD: §f0',
-            '§eLEVEL: §f0 §7(0.00/50.00)',
-            '§f',
-            '§aSERVER.IP §f' .
-            $this->getServerAddress()
-        ];
-    }
-
-    private function getServerAddress(): string
-    {
-        $server =
-            $this->main->getServer();
-
-        $ip =
-            $server->getIp();
-
-        $port =
-            $server->getPort();
-
-        if (
-            $port > 0 &&
-            $port !== 19132
-        ) {
-            return $ip . ':' . $port;
-        }
-
-        return $ip;
-    }
-
-    public static function formatNumber(
-        int|float $number
-    ): string {
-        $negative = $number < 0;
-        $number = abs((float) $number);
-
-        if ($number < 1000) {
-            $result = number_format(
-                $number,
-                0,
-                '.',
-                ''
-            );
-
-            return $negative
-                ? '-' . $result
-                : $result;
-        }
-
-        $suffixes = [
-            'K',
-            'M',
-            'B',
-            'T',
-            'Qa',
-            'Qi',
-            'Sx',
-            'Sp',
-            'Oc',
-            'No',
-            'Dc',
-            'Ud',
-            'Dd',
-            'Td',
-            'Qad',
-            'Qid',
-            'Sxd',
-            'Spd',
-            'Ocd',
-            'Nod'
-        ];
-
-        $index = 0;
-
-        while (
-            $number >= 1000 &&
-            $index < count($suffixes) - 1
-        ) {
-            $number /= 1000;
-            ++$index;
-        }
-
-        if (
-            $index === count($suffixes) - 1 &&
-            $number >= 1000
-        ) {
-            $result = sprintf(
-                '%.2e',
-                $number
-            );
-
-            return $negative
-                ? '-' . $result
-                : $result;
-        }
-
-        $result = rtrim(
-            rtrim(
-                number_format(
-                    $number,
-                    2,
-                    '.',
-                    ''
-                ),
-                '0'
-            ),
-            '.'
+        $miner = $this->main->getMinerManager()->getOrLoad(
+            $player->getName()
         );
 
-        return ($negative ? '-' : '') .
-            $result .
-            $suffixes[$index];
+        $placeholders = [
+            'name' => $player->getName(),
+            'prefix_name' => $player->getName(),
+            'gold' => NumberFormatter::short(
+                $this->main->getGoldEconomy()->get(
+                    $player->getName()
+                )
+            ),
+            'money' => NumberFormatter::short(
+                $this->main->getMoneyEconomy()->get(
+                    $player->getName()
+                )
+            ),
+            'mined' => NumberFormatter::short(
+                $miner->getMined()
+            ),
+            'deaths' => NumberFormatter::short(
+                $miner->getDeaths()
+            ),
+            'kills' => NumberFormatter::short(
+                $miner->getKills()
+            ),
+            'kill_streak' => (string) $miner->getKillStreak(),
+            'pvp' => $this->main->getPvpManager()->getState(
+                $player->getName()
+            ) ? 'ON' : 'OFF',
+            'server_address' => ServerAddress::of($this->main)
+        ];
+
+        $result = [];
+
+        foreach (
+            $this->main->getConfigManager()->getStringList(
+                'scoreboard.lobby.lines'
+            ) as $line
+        ) {
+            $result[] = str_replace(
+                array_map(
+                    static fn(string $key): string => '{' . $key . '}',
+                    array_keys($placeholders)
+                ),
+                array_values($placeholders),
+                $line
+            );
+        }
+
+        return $result;
     }
 }

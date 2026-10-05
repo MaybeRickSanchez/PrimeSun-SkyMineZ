@@ -5,10 +5,20 @@ declare(strict_types=1);
 namespace AM\SkyMineZ\leaderboard;
 
 use AM\SkyMineZ\useless\MultiLineTextParticle;
+use AM\SkyMineZ\useless\NumberFormatter;
+use InvalidArgumentException;
+use pocketmine\math\Vector3;
 use pocketmine\player\Player;
 use pocketmine\world\Position;
-use InvalidArgumentException;
+use pocketmine\world\World;
 
+/**
+ * A floating top-10 board for one statistic.
+ *
+ * The rendered lines are hashed so {@link update()} can skip the respawn when
+ * nothing changed. Without that, every refresh would despawn and respawn every
+ * line and make the board flicker for everyone watching.
+ */
 final class Leaderboard
 {
     public const TYPE_MONEY = 'money';
@@ -17,6 +27,9 @@ final class Leaderboard
     public const TYPE_DEATHS = 'deaths';
     public const TYPE_KILLS = 'kills';
 
+    /**
+     * @var array<string, string>
+     */
     private const COLORS = [
         self::TYPE_MONEY => '§a',
         self::TYPE_GOLD => '§6',
@@ -25,18 +38,32 @@ final class Leaderboard
         self::TYPE_KILLS => '§b'
     ];
 
+    /**
+     * @var array<string, string>
+     */
     private const TITLES = [
-        self::TYPE_MONEY => 'MONEY TOP',
-        self::TYPE_GOLD => 'GOLD TOP',
-        self::TYPE_MINED => 'MINED TOP',
-        self::TYPE_DEATHS => 'DEATHS TOP',
-        self::TYPE_KILLS => 'KILLS TOP'
+        self::TYPE_MONEY => '§aMONEY TOP',
+        self::TYPE_GOLD => '§6GOLD TOP',
+        self::TYPE_MINED => '§dMINED TOP',
+        self::TYPE_DEATHS => '§cDEATHS TOP',
+        self::TYPE_KILLS => '§bKILLS TOP'
     ];
+
+    /**
+     * Height of the hologram above the anchor, so the title sits on top of the
+     * list instead of below it.
+     */
+    private const LIST_ROWS = 10;
 
     private MultiLineTextParticle $text;
 
+    private string $title;
+
     private ?string $lastHash = null;
 
+    /**
+     * @throws InvalidArgumentException when the type is unknown
+     */
     public function __construct(
         private string $name,
         private string $type,
@@ -49,16 +76,20 @@ final class Leaderboard
             );
         }
 
-        $this->text = new MultiLineTextParticle(
-            $position->add(0.5, 2.5, 0.5),
-            $position->getWorld()
-        );
-
         $this->title = $title
             ?? self::TITLES[$type];
-    }
 
-    private string $title;
+        $this->text = new MultiLineTextParticle(
+            new Vector3(
+                $position->x,
+                $position->y + (
+                    (self::LIST_ROWS + 1) * MultiLineTextParticle::LINE_SPACING
+                ),
+                $position->z
+            ),
+            $position->getWorld()
+        );
+    }
 
     public function getName(): string
     {
@@ -93,7 +124,31 @@ final class Leaderboard
         return $this->position;
     }
 
-    public function getWorld()
+    public function setPosition(
+        Position $position
+    ): self {
+        $this->position = $position;
+
+        $this->text->setPosition(
+            new Vector3(
+                $position->x,
+                $position->y + (
+                    (self::LIST_ROWS + 1) * MultiLineTextParticle::LINE_SPACING
+                ),
+                $position->z
+            )
+        );
+
+        /*
+         * The position changed, so the cached hash no longer proves the text is
+         * already on screen where it needs to be.
+         */
+        $this->lastHash = null;
+
+        return $this;
+    }
+
+    public function getWorld(): World
     {
         return $this->position->getWorld();
     }
@@ -104,7 +159,25 @@ final class Leaderboard
     }
 
     /**
-     * @param list<array{name: string, value: int|float}> $rows
+     * Every supported type, for command completion and validation.
+     *
+     * @return list<string>
+     */
+    public static function getTypes(): array
+    {
+        return array_keys(self::COLORS);
+    }
+
+    public static function isValidType(
+        string $type
+    ): bool {
+        return isset(self::COLORS[$type]);
+    }
+
+    /**
+     * Re-renders the board.
+     *
+     * @param list<array{name: string, value: int|float}> $rows highest first
      */
     public function update(
         array $rows,
@@ -114,40 +187,28 @@ final class Leaderboard
 
         $color = $this->getColor();
 
-        $lines[] =
-            $color .
-            $this->title;
-
+        $lines[] = $this->title;
         $lines[] = '§f';
-
-        foreach ($rows as $index => $row) {
-            $rank = $index + 1;
-
-            $lines[] =
-                '§e' .
-                $rank .
-                '. §f' .
-                $row['name'] .
-                ' §7- ' .
-                $color .
-                self::formatNumber(
-                    $row['value']
-                );
-        }
 
         if ($rows === []) {
             $lines[] = '§8No ranked players';
+        } else {
+            foreach (
+                $rows as $index => $row
+            ) {
+                $lines[] =
+                    '§e' . ($index + 1) . '. §f'
+                    . $row['name']
+                    . ' §7- '
+                    . $color
+                    . NumberFormatter::short($row['value']);
+            }
         }
 
         $lines[] = '§f';
+        $lines[] = '§7SERVER.IP §f' . $serverAddress;
 
-        $lines[] =
-            '§7SERVER.IP §f' .
-            $serverAddress;
-
-        $hash = md5(
-            implode("\n", $lines)
-        );
+        $hash = md5(implode("\n", $lines));
 
         if ($hash === $this->lastHash) {
             return;
@@ -155,9 +216,7 @@ final class Leaderboard
 
         $this->lastHash = $hash;
 
-        $this->text->setLines(
-            $lines
-        );
+        $this->text->setLines($lines);
     }
 
     public function spawn(): void
@@ -169,15 +228,12 @@ final class Leaderboard
         Player $player
     ): void {
         if (
-            $player->getWorld() !==
-            $this->getWorld()
+            $this->getWorld() !== $player->getWorld()
         ) {
             return;
         }
 
-        $this->text->spawn(
-            $player
-        );
+        $this->text->spawn($player);
     }
 
     public function despawn(): void
@@ -190,104 +246,25 @@ final class Leaderboard
         return $this->text->isSpawned();
     }
 
+    /**
+     * @return array{
+     *     type: string,
+     *     title: string,
+     *     world: string,
+     *     x: float,
+     *     y: float,
+     *     z: float
+     * }
+     */
     public function toArray(): array
     {
         return [
             'type' => $this->type,
             'title' => $this->title,
-            'world' =>
-                $this->position
-                    ->getWorld()
-                    ->getFolderName(),
+            'world' => $this->getWorld()->getFolderName(),
             'x' => $this->position->x,
             'y' => $this->position->y,
             'z' => $this->position->z
         ];
-    }
-
-    public static function formatNumber(
-        int|float $number
-    ): string {
-        $negative = $number < 0;
-
-        $number = abs(
-            (float) $number
-        );
-
-        if ($number < 1000) {
-            $result = number_format(
-                $number,
-                0,
-                '.',
-                ''
-            );
-
-            return $negative
-                ? '-' . $result
-                : $result;
-        }
-
-        $suffixes = [
-            'K',
-            'M',
-            'B',
-            'T',
-            'Qa',
-            'Qi',
-            'Sx',
-            'Sp',
-            'Oc',
-            'No',
-            'Dc',
-            'Ud',
-            'Dd',
-            'Td',
-            'Qad',
-            'Qid',
-            'Sxd',
-            'Spd',
-            'Ocd',
-            'Nod'
-        ];
-
-        $index = 0;
-
-        while (
-            $number >= 1000 &&
-            $index < count($suffixes) - 1
-        ) {
-            $number /= 1000;
-            ++$index;
-        }
-
-        if (
-            $index === count($suffixes) - 1 &&
-            $number >= 1000
-        ) {
-            $result = sprintf(
-                '%.2e',
-                $number
-            );
-
-            return ($negative ? '-' : '') .
-                $result;
-        }
-
-        $result = rtrim(
-            rtrim(
-                number_format(
-                    $number,
-                    2,
-                    '.',
-                    ''
-                ),
-                '0'
-            ),
-            '.'
-        );
-
-        return ($negative ? '-' : '') .
-            $result .
-            $suffixes[$index];
     }
 }

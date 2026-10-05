@@ -82,6 +82,9 @@ final class Miner
         return $this;
     }
 
+    /**
+     * @return array{mined: int, deaths: int, kills: int, killStreak: int}
+     */
     public function toArray(): array
     {
         return $this->states->toArray();

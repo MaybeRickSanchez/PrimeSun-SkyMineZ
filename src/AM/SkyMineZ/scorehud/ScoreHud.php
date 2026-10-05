@@ -4,8 +4,9 @@ declare(strict_types=1);
 
 namespace AM\SkyMineZ\scorehud;
 
+use AM\SkyMineZ\event\ScoreHudUpdateEvent;
 use AM\SkyMineZ\Main;
-use AM\SkyMineZ\miner\Miner;
+use AM\SkyMineZ\useless\SpreadTask;
 use pocketmine\event\Listener;
 use pocketmine\event\player\PlayerJoinEvent;
 use pocketmine\event\player\PlayerQuitEvent;
@@ -14,90 +15,152 @@ use pocketmine\network\mcpe\protocol\SetDisplayObjectivePacket;
 use pocketmine\network\mcpe\protocol\SetScorePacket;
 use pocketmine\network\mcpe\protocol\types\ScorePacketEntry;
 use pocketmine\player\Player;
-use pocketmine\scheduler\ClosureTask;
+use pocketmine\scheduler\TaskHandler;
 
-class ScoreHud implements Listener
+/**
+ * The sidebar.
+ *
+ * Two layouts exist: a welcome screen while a player stands in the spawn area and
+ * a stats screen everywhere else. Switching has hysteresis (see
+ * `scoreboard.spawn-welcome-seconds` and `scoreboard.spawn-leave-seconds`) so
+ * walking two blocks away does not make the board flicker.
+ *
+ * Performance notes, because this runs on every player:
+ *
+ *  - A pass over the online players is spread across several ticks with
+ *    {@link SpreadTask}. It is a one-shot task scheduled with
+ *    scheduleDelayedTask; scheduling it as repeating would leak a task per tick.
+ *  - Only lines that actually changed are re-sent. An unchanged board costs one
+ *    string comparison per line and zero packets.
+ */
+final class ScoreHud implements Listener
 {
     private const OBJECTIVE = 'skymine';
-    private const UPDATE_TICKS = 20;
 
     private const MODE_MIDDLE = 'middle';
     private const MODE_LOBBY = 'lobby';
 
-    private const SPAWN_WELCOME_SECONDS = 60;
-    private const SPAWN_LEAVE_SECONDS = 5;
-    private const SPAWN_RADIUS = 3.0;
-
-    private Main $main;
-
     private MiddleLobbyScoreHud $middleHud;
+
     private LobbyScoreHud $lobbyHud;
 
-    private ScoreHudTask $task;
+    /** @var TaskHandler<ScoreHudTask>|null */
+    private ?TaskHandler $task = null;
 
     /**
+     * Current layout per player, keyed by lower-case name.
+     *
      * @var array<string, string>
      */
     private array $modes = [];
 
     /**
-     * @var array<string, int>
+     * Timestamp the player last entered the spawn area, or null.
+     *
+     * @var array<string, int|null>
      */
     private array $spawnEnteredAt = [];
 
     /**
+     * Timestamp the player last left the spawn area, or null.
+     *
      * @var array<string, int|null>
      */
     private array $leftSpawnAt = [];
 
     /**
-     * @var array<string, array<int, string>>
+     * The lines currently on each player's screen, so only changes are sent.
+     *
+     * @var array<string, list<string>>
      */
     private array $lines = [];
 
-    public function __construct(Main $main)
+    /**
+     * Players who switched the sidebar off with /hud.
+     *
+     * @var array<string, true>
+     */
+    private array $disabled = [];
+
+    public function __construct(
+        private Main $main
+    ) {
+        $this->middleHud = new MiddleLobbyScoreHud($main);
+        $this->lobbyHud = new LobbyScoreHud($main);
+
+        $this->start();
+    }
+
+    private function start(): void
     {
-        $this->main = $main;
+        $this->task?->cancel();
 
-        $this->middleHud = new MiddleLobbyScoreHud(
-            $this->main
+        $this->task = $this->main->getScheduler()->scheduleRepeatingTask(
+            new ScoreHudTask($this),
+            $this->getUpdateTicks()
         );
+    }
 
-        $this->lobbyHud = new LobbyScoreHud(
-            $this->main
-        );
+    /**
+     * Re-reads the config and re-arms the task with the new interval.
+     */
+    public function restart(): void
+    {
+        foreach (
+            $this->lines as $name => $_
+        ) {
+            $player = $this->main->getServer()->getPlayerExact(
+                $name
+            );
 
-        $this->task = new ScoreHudTask($this);
+            if ($player !== null) {
+                $this->createScoreboard(
+                    $player,
+                    $this->titleFor($this->modes[$name] ?? self::MODE_LOBBY),
+                    $this->linesFor(
+                        $player,
+                        $this->modes[$name] ?? self::MODE_LOBBY
+                    )
+                );
+            }
+        }
 
-        $this->main->getScheduler()->scheduleRepeatingTask(
-            $this->task,
-            self::UPDATE_TICKS
-        );
+        $this->start();
     }
 
     public function onJoin(PlayerJoinEvent $event): void
     {
-        $player = $event->getPlayer();
-
-        $this->initializePlayer($player);
+        $this->initializePlayer($event->getPlayer());
     }
 
     public function onQuit(PlayerQuitEvent $event): void
     {
-        $player = $event->getPlayer();
-
-        $this->remove($player);
+        $this->remove($event->getPlayer());
     }
 
+    /**
+     * One full pass over the online players, spread over several ticks.
+     */
     public function tick(): void
     {
-        foreach ($this->main->getServer()->getOnlinePlayers() as $player) {
-            $this->updatePlayer($player);
-        }
+        SpreadTask::spread(
+            $this->main,
+            array_values(
+                $this->main->getServer()
+                    ->getOnlinePlayers()
+            ),
+            $this->getPlayersPerTick(),
+            function(mixed $player): void {
+                if ($player instanceof Player) {
+                    $this->updatePlayer($player);
+                }
+            }
+        );
     }
 
-    public function initializePlayer(Player $player): void
-    {
+    public function initializePlayer(
+        Player $player
+    ): void {
         $name = $this->key($player);
 
         unset(
@@ -111,17 +174,26 @@ class ScoreHud implements Listener
             $this->spawnEnteredAt[$name] = time();
             $this->leftSpawnAt[$name] = null;
 
-            $this->showMiddle($player);
-        } else {
-            $this->modes[$name] = self::MODE_LOBBY;
-            $this->leftSpawnAt[$name] = null;
+            $this->render(
+                $player,
+                self::MODE_MIDDLE
+            );
 
-            $this->showLobby($player);
+            return;
         }
+
+        $this->modes[$name] = self::MODE_LOBBY;
+        $this->leftSpawnAt[$name] = null;
+
+        $this->render(
+            $player,
+            self::MODE_LOBBY
+        );
     }
 
-    public function remove(Player $player): void
-    {
+    public function remove(
+        Player $player
+    ): void {
         $name = $this->key($player);
 
         $this->removeScoreboard($player);
@@ -130,122 +202,170 @@ class ScoreHud implements Listener
             $this->modes[$name],
             $this->spawnEnteredAt[$name],
             $this->leftSpawnAt[$name],
-            $this->lines[$name]
+            $this->lines[$name],
+            $this->disabled[$name]
         );
     }
 
-    public function updatePlayer(Player $player): void
-    {
+    /**
+     * Flips the sidebar for one player.
+     *
+     * @return bool the new state, true meaning the sidebar is visible again
+     */
+    public function toggle(
+        Player $player
+    ): bool {
+        $name = $this->key($player);
+
+        if (isset($this->disabled[$name])) {
+            unset(
+                $this->disabled[$name],
+                $this->modes[$name],
+                $this->spawnEnteredAt[$name],
+                $this->leftSpawnAt[$name]
+            );
+
+            $this->initializePlayer($player);
+
+            return true;
+        }
+
+        $this->disabled[$name] = true;
+
+        $this->removeScoreboard($player);
+
+        unset(
+            $this->modes[$name],
+            $this->spawnEnteredAt[$name],
+            $this->leftSpawnAt[$name]
+        );
+
+        return false;
+    }
+
+    public function isEnabledFor(
+        Player $player
+    ): bool {
+        return !isset(
+            $this->disabled[$this->key($player)]
+        );
+    }
+
+    public function updatePlayer(
+        Player $player
+    ): void {
         if (!$player->isConnected()) {
             return;
         }
 
         $name = $this->key($player);
-        $now = time();
-        $atSpawn = $this->isAtServerSpawn($player);
 
-        if (!isset($this->modes[$name])) {
-            $this->initializePlayer($player);
+        if (isset($this->disabled[$name])) {
+            /*
+             * Turned off after the board was created: send the removal once and
+             * stop touching this player.
+             */
+            if (isset($this->lines[$name])) {
+                $this->removeScoreboard($player);
+
+                unset($this->modes[$name]);
+            }
+
             return;
         }
 
-        if ($atSpawn) {
+        if (!isset($this->modes[$name])) {
+            $this->initializePlayer($player);
+
+            return;
+        }
+
+        $now = time();
+        $mode = $this->modes[$name];
+
+        if ($this->isAtServerSpawn($player)) {
             $this->leftSpawnAt[$name] = null;
 
-            if ($this->modes[$name] !== self::MODE_MIDDLE) {
+            if ($mode !== self::MODE_MIDDLE) {
                 $this->modes[$name] = self::MODE_MIDDLE;
                 $this->spawnEnteredAt[$name] = $now;
-
-                $this->showMiddle($player);
-
-                return;
             }
 
             $enteredAt = $this->spawnEnteredAt[$name] ?? $now;
 
-            if (
-                ($now - $enteredAt) >=
-                self::SPAWN_WELCOME_SECONDS
-            ) {
-                if ($this->modes[$name] !== self::MODE_LOBBY) {
-                    $this->modes[$name] = self::MODE_LOBBY;
+            /*
+             * The welcome screen only turns into the stats screen after the
+             * player has stayed in spawn for a while, so spawning and dying in the
+             * spawn area does not make the board change constantly.
+             */
+            $mode = ($now - $enteredAt) >= $this->getWelcomeSeconds()
+                ? self::MODE_LOBBY
+                : self::MODE_MIDDLE;
 
-                    $this->showLobby($player);
+            $this->modes[$name] = $mode;
 
-                    return;
-                }
-
-                $this->showLobby($player);
-                return;
-            }
-
-            $this->showMiddle($player);
+            $this->render(
+                $player,
+                $mode
+            );
 
             return;
         }
 
-        if (
-            $this->modes[$name] === self::MODE_MIDDLE
-        ) {
+        if ($mode === self::MODE_MIDDLE) {
             if ($this->leftSpawnAt[$name] === null) {
                 $this->leftSpawnAt[$name] = $now;
             }
 
-            if (
-                ($now - $this->leftSpawnAt[$name]) >=
-                self::SPAWN_LEAVE_SECONDS
-            ) {
+            /*
+             * Same idea in reverse: stepping two blocks out of the radius does
+             * not immediately swap the board.
+             */
+            if (($now - $this->leftSpawnAt[$name]) >= $this->getLeaveSeconds()) {
                 $this->modes[$name] = self::MODE_LOBBY;
                 $this->spawnEnteredAt[$name] = 0;
-
-                $this->showLobby($player);
-
-                return;
             }
 
-            $this->showMiddle($player);
-
-            return;
+            $mode = $this->modes[$name];
         }
 
-        $this->showLobby($player);
-    }
-
-    private function showMiddle(Player $player): void
-    {
-        $lines = $this->middleHud->getLines();
-
-        $this->updateScoreboard(
+        $this->render(
             $player,
-            $this->middleHud->getTitle(),
-            $lines
-        );
-    }
-
-    private function showLobby(Player $player): void
-    {
-        $lines = $this->lobbyHud->getLines(
-            $player
-        );
-
-        $this->updateScoreboard(
-            $player,
-            $this->lobbyHud->getTitle(),
-            $lines
+            $mode
         );
     }
 
     /**
-     * @param list<string> $lines
+     * Sends the board if it differs from what the player already sees.
      */
-    private function updateScoreboard(
+    private function render(
         Player $player,
-        string $title,
-        array $lines
+        string $mode
     ): void {
         $name = $this->key($player);
+        $title = $this->titleFor($mode);
+        $lines = $this->linesFor(
+            $player,
+            $mode
+        );
 
-        if (!isset($this->lines[$name])) {
+        if (ScoreHudUpdateEvent::hasHandlers()) {
+            $event = new ScoreHudUpdateEvent(
+                $name,
+                $title,
+                $lines
+            );
+
+            $event->call();
+
+            if ($event->isCancelled()) {
+                return;
+            }
+        }
+
+        $oldLines = $this->lines[$name] ?? null;
+
+        if ($oldLines === null) {
             $this->createScoreboard(
                 $player,
                 $title,
@@ -255,20 +375,9 @@ class ScoreHud implements Listener
             return;
         }
 
-        if (
-            $this->modes[$name] === self::MODE_MIDDLE &&
-            $title !== $this->middleHud->getTitle()
-        ) {
-            $this->createScoreboard(
-                $player,
-                $title,
-                $lines
-            );
-
+        if ($oldLines === $lines) {
             return;
         }
-
-        $oldLines = $this->lines[$name];
 
         $this->sendChangedLines(
             $player,
@@ -297,9 +406,9 @@ class ScoreHud implements Listener
             SetDisplayObjectivePacket::SORT_ORDER_DESCENDING
         );
 
-        $player
-            ->getNetworkSession()
-            ->sendDataPacket($packet);
+        $player->getNetworkSession()->sendDataPacket(
+            $packet
+        );
 
         $this->sendChangedLines(
             $player,
@@ -307,12 +416,13 @@ class ScoreHud implements Listener
             $lines
         );
 
-        $this->lines[
-        $this->key($player)
-        ] = $lines;
+        $this->lines[$this->key($player)] = $lines;
     }
 
     /**
+     * Sends only the lines whose text or position changed, plus removals for
+     * lines that disappeared.
+     *
      * @param list<string> $oldLines
      * @param list<string> $newLines
      */
@@ -328,7 +438,11 @@ class ScoreHud implements Listener
             count($newLines)
         );
 
-        for ($index = 0; $index < $max; ++$index) {
+        for (
+            $index = 0;
+            $index < $max;
+            ++$index
+        ) {
             $old = $oldLines[$index] ?? null;
             $new = $newLines[$index] ?? null;
 
@@ -336,55 +450,27 @@ class ScoreHud implements Listener
                 continue;
             }
 
-            if ($new !== null) {
-                $entry = new ScorePacketEntry();
+            /*
+             * Bedrock identifies a scoreboard row by its id, not by its text, so
+             * a line has to be removed by sending the *old* text with the same
+             * id. That is what the padding below is for: it makes the text unique
+             * per row, which also stops the client from merging two rows that
+             * happen to read the same.
+             */
+            $entry = new ScorePacketEntry();
 
-                $entry->objectiveName =
-                    self::OBJECTIVE;
+            $entry->objectiveName = self::OBJECTIVE;
+            $entry->type = ScorePacketEntry::TYPE_FAKE_PLAYER;
+            $entry->customName = $this->makeUniqueLine(
+                $new ?? (string) $old,
+                $index
+            );
 
-                $entry->type =
-                    ScorePacketEntry::TYPE_FAKE_PLAYER;
+            $entry->score = count($newLines) - $index;
 
-                $entry->customName =
-                    $this->makeUniqueLine(
-                        $new,
-                        $index
-                    );
+            $entry->scoreboardId = $index + 1;
 
-                $entry->score =
-                    count($newLines) - $index;
-
-                $entry->scoreboardId =
-                    $index + 1;
-
-                $entries[] = $entry;
-
-                continue;
-            }
-
-            if ($old !== null) {
-                $entry = new ScorePacketEntry();
-
-                $entry->objectiveName =
-                    self::OBJECTIVE;
-
-                $entry->type =
-                    ScorePacketEntry::TYPE_FAKE_PLAYER;
-
-                $entry->customName =
-                    $this->makeUniqueLine(
-                        $old,
-                        $index
-                    );
-
-                $entry->score =
-                    count($oldLines) - $index;
-
-                $entry->scoreboardId =
-                    $index + 1;
-
-                $entries[] = $entry;
-            }
+            $entries[] = $entry;
         }
 
         if ($entries === []) {
@@ -392,15 +478,12 @@ class ScoreHud implements Listener
         }
 
         $packet = new SetScorePacket();
-
-        $packet->type =
-            SetScorePacket::TYPE_CHANGE;
-
+        $packet->type = SetScorePacket::TYPE_CHANGE;
         $packet->entries = $entries;
 
-        $player
-            ->getNetworkSession()
-            ->sendDataPacket($packet);
+        $player->getNetworkSession()->sendDataPacket(
+            $packet
+        );
     }
 
     private function makeUniqueLine(
@@ -408,38 +491,53 @@ class ScoreHud implements Listener
         int $index
     ): string {
         return $line . str_repeat(
-                '§r',
-                $index + 1
-            );
+            '§r',
+            $index + 1
+        );
     }
 
     private function removeScoreboard(
         Player $player
     ): void {
         $packet = new RemoveObjectivePacket();
+        $packet->objectiveName = self::OBJECTIVE;
 
-        $packet->objectiveName =
-            self::OBJECTIVE;
-
-        $player
-            ->getNetworkSession()
-            ->sendDataPacket($packet);
+        $player->getNetworkSession()->sendDataPacket(
+            $packet
+        );
 
         unset(
-            $this->lines[
-            $this->key($player)
-            ]
+            $this->lines[$this->key($player)]
         );
+    }
+
+    private function titleFor(
+        string $mode
+    ): string {
+        return $mode === self::MODE_MIDDLE
+            ? $this->middleHud->getTitle()
+            : $this->lobbyHud->getTitle();
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function linesFor(
+        Player $player,
+        string $mode
+    ): array {
+        return $mode === self::MODE_MIDDLE
+            ? $this->middleHud->getLines()
+            : $this->lobbyHud->getLines($player);
     }
 
     private function isAtServerSpawn(
         Player $player
     ): bool {
-        $defaultWorld =
-            $this->main
-                ->getServer()
-                ->getWorldManager()
-                ->getDefaultWorld();
+        $defaultWorld = $this->main
+            ->getServer()
+            ->getWorldManager()
+            ->getDefaultWorld();
 
         if ($defaultWorld === null) {
             return false;
@@ -449,37 +547,80 @@ class ScoreHud implements Listener
             return false;
         }
 
-        $spawn =
-            $defaultWorld->getSpawnLocation();
+        $radius = $this->getSpawnRadius();
 
-        return $player->getPosition()
-                ->distanceSquared($spawn)
-            <= (
-                self::SPAWN_RADIUS *
-                self::SPAWN_RADIUS
-            );
+        return $player->getPosition()->distanceSquared(
+            $defaultWorld->getSpawnLocation()
+        ) <= ($radius * $radius);
     }
 
-    private function key(Player $player): string
-    {
+    private function key(
+        Player $player
+    ): string {
         return strtolower(
             $player->getName()
         );
     }
 
-    public function getMain(): Main
+    private function getWelcomeSeconds(): int
     {
-        return $this->main;
+        return max(
+            0,
+            $this->main
+                ->getConfigManager()
+                ->getInt(
+                    'scoreboard.spawn-welcome-seconds',
+                    60
+                )
+        );
     }
 
-    public function getMiner(
-        Player $player
-    ): ?Miner {
-        $manager =
-            $this->main->getMinerManager();
+    private function getLeaveSeconds(): int
+    {
+        return max(
+            0,
+            $this->main
+                ->getConfigManager()
+                ->getInt(
+                    'scoreboard.spawn-leave-seconds',
+                    5
+                )
+        );
+    }
 
-        return $manager->getOrLoad(
-            $player->getName()
+    private function getSpawnRadius(): float
+    {
+        return $this->main
+            ->getConfigManager()
+            ->getFloat(
+                'scoreboard.spawn-radius',
+                3.0
+            );
+    }
+
+    private function getPlayersPerTick(): int
+    {
+        return max(
+            1,
+            $this->main
+                ->getConfigManager()
+                ->getInt(
+                    'scoreboard.players-per-tick',
+                    4
+                )
+        );
+    }
+
+    private function getUpdateTicks(): int
+    {
+        return max(
+            1,
+            $this->main
+                ->getConfigManager()
+                ->getInt(
+                    'scoreboard.update-ticks',
+                    20
+                )
         );
     }
 }

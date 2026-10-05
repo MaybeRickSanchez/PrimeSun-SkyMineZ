@@ -1,0 +1,20 @@
+{
+    "name": "amirreza/skyminez",
+    "description": "A SkyMine plugin for PocketMine-MP built around anti-lag defaults.",
+    "type": "project",
+    "license": "MIT",
+    "require": {
+        "php": "^8.1",
+        "ext-yaml": "*"
+    },
+    "require-dev": {
+        "phpstan/phpstan": "^2.0"
+    },
+    "scripts": {
+        "lint": "find src -name '*.php' -print0 | xargs -0 -n1 -P4 php -l",
+        "stan": "phpstan analyse -c phpstan.neon.dist --memory-limit=-1"
+    },
+    "config": {
+        "sort-packages": true
+    }
+}

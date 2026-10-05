@@ -16,9 +16,10 @@ final class MinerManager
 
     private Config $db;
 
-    public function __construct()
-    {
-        $this->db = Main::getInstance()->getMinerDB();
+    public function __construct(
+        Main $main
+    ) {
+        $this->db = $main->getMinerDB();
     }
 
     public function load(string $playerName): Miner
@@ -34,16 +35,12 @@ final class MinerManager
             null
         );
 
-        if (!is_array($data)) {
-            $miner = new Miner(
-                $playerName
-            );
-        } else {
-            $miner = new Miner(
-                $playerName,
-                MinerStates::fromArray($data)
-            );
-        }
+        $miner = new Miner(
+            $playerName,
+            is_array($data) && self::isStringMap($data)
+                ? MinerStates::fromArray($data)
+                : new MinerStates()
+        );
 
         $this->miners[$playerName] = $miner;
 
@@ -73,6 +70,12 @@ final class MinerManager
         );
     }
 
+    /**
+     * Writes the stats into the config and drops the player from memory.
+     *
+     * The file itself is not saved here: {@link saveAll()} writes it during
+     * onDisable, which keeps a busy server from hitting the disk on every quit.
+     */
     public function saveAndUnload(string $playerName): void
     {
         $playerName = $this->normalizeName($playerName);
@@ -85,8 +88,6 @@ final class MinerManager
             $playerName,
             $this->miners[$playerName]->toArray()
         );
-
-        $this->db->save();
 
         unset(
             $this->miners[$playerName]
@@ -156,6 +157,24 @@ final class MinerManager
     }
 
     /**
+     * @param array<mixed> $array
+     *
+     * @phpstan-assert-if-true array<string, mixed> $array
+     */
+    private static function isStringMap(array $array): bool
+    {
+        foreach (
+            array_keys($array) as $key
+        ) {
+            if (!is_string($key)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
      * @return array<string, array{
      *     mined: int,
      *     deaths: int,
@@ -168,20 +187,18 @@ final class MinerManager
         $result = [];
 
         foreach ($this->db->getAll() as $playerName => $data) {
-            if (!is_array($data)) {
+            if (
+                !is_array($data)
+                || !self::isStringMap($data)
+            ) {
                 continue;
             }
 
-            $playerName = $this->normalizeName(
-                (string) $playerName
-            );
+            $states = MinerStates::fromArray($data);
 
-            $result[$playerName] = [
-                'mined' => (int) ($data['mined'] ?? 0),
-                'deaths' => (int) ($data['deaths'] ?? 0),
-                'kills' => (int) ($data['kills'] ?? 0),
-                'killStreak' => (int) ($data['killStreak'] ?? 0)
-            ];
+            $result[$this->normalizeName(
+                (string) $playerName
+            )] = $states->toArray();
         }
 
         foreach ($this->miners as $miner) {

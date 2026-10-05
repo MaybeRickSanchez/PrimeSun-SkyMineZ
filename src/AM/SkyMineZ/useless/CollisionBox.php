@@ -7,44 +7,81 @@ namespace AM\SkyMineZ\useless;
 use pocketmine\math\Vector3;
 use pocketmine\world\World;
 
+/**
+ * An axis aligned cuboid between two corners.
+ *
+ * The corners are normalised on construction, so {@link isIn()} costs six float
+ * comparisons instead of six min()/max() calls. Mines and outposts run this check
+ * against every player on every tick, which makes the difference visible on a
+ * busy server.
+ */
 class CollisionBox
 {
-    private World $world;
+    private float $minX;
 
-    private Vector3 $pos1;
+    private float $minY;
 
-    private Vector3 $pos2;
+    private float $minZ;
 
-    public function __construct(Vector3 $pos1, Vector3 $pos2, World $world)
-    {
-        $this->world = $world;
-        $this->pos1 = $pos1;
-        $this->pos2 = $pos2;
+    private float $maxX;
+
+    private float $maxY;
+
+    private float $maxZ;
+
+    public function __construct(
+        private Vector3 $pos1,
+        private Vector3 $pos2,
+        private World $world
+    ) {
+        $this->minX = min(
+            $pos1->x,
+            $pos2->x
+        );
+        $this->minY = min(
+            $pos1->y,
+            $pos2->y
+        );
+        $this->minZ = min(
+            $pos1->z,
+            $pos2->z
+        );
+
+        $this->maxX = max(
+            $pos1->x,
+            $pos2->x
+        );
+        $this->maxY = max(
+            $pos1->y,
+            $pos2->y
+        );
+        $this->maxZ = max(
+            $pos1->z,
+            $pos2->z
+        );
     }
 
     public function isIn(Vector3 $pos): bool
     {
-        $minX = min($this->pos1->x, $this->pos2->x);
-        $minY = min($this->pos1->y, $this->pos2->y);
-        $minZ = min($this->pos1->z, $this->pos2->z);
+        return $pos->x >= $this->minX
+            && $pos->x <= $this->maxX
+            && $pos->y >= $this->minY
+            && $pos->y <= $this->maxY
+            && $pos->z >= $this->minZ
+            && $pos->z <= $this->maxZ;
+    }
 
-        $maxX = max($this->pos1->x, $this->pos2->x);
-        $maxY = max($this->pos1->y, $this->pos2->y);
-        $maxZ = max($this->pos1->z, $this->pos2->z);
-
-        if ($pos->x < $minX || $pos->x > $maxX) {
-            return false;
-        }
-
-        if ($pos->y < $minY || $pos->y > $maxY) {
-            return false;
-        }
-
-        if ($pos->z < $minZ || $pos->z > $maxZ) {
-            return false;
-        }
-
-        return true;
+    /**
+     * Middle of the box. Handy for picking "the player furthest from the middle"
+     * and for placing a label above a mine.
+     */
+    public function getCenter(): Vector3
+    {
+        return new Vector3(
+            ($this->minX + $this->maxX) / 2,
+            ($this->minY + $this->maxY) / 2,
+            ($this->minZ + $this->maxZ) / 2
+        );
     }
 
     public function getWorld(): World

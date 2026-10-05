@@ -1,0 +1,15 @@
+# IDE
+.idea/
+*.iml
+
+# Build artefacts
+/build/
+/SkyMineZ.phar
+
+# Local server data, if the plugin folder is used as a server plugin dir
+/plugin_data/
+/logs/
+
+# OS noise
+.DS_Store
+Thumbs.db

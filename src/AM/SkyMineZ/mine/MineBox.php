@@ -4,135 +4,248 @@ declare(strict_types=1);
 
 namespace AM\SkyMineZ\mine;
 
-use AM\SkyMineZ\Main;
 use AM\SkyMineZ\useless\CollisionBox;
+use pocketmine\block\Block;
 use pocketmine\math\Vector3;
-use pocketmine\scheduler\TaskHandler;
+use pocketmine\world\Position;
 use pocketmine\world\World;
-use pocketmine\scheduler\Task;
 
+/**
+ * The cuboid a mine fills, plus the geometry helpers the refill needs.
+ */
 class MineBox extends CollisionBox
 {
-    private ?TaskHandler $activeTask = null;
-
-    public function __construct(Vector3 $pos1, Vector3 $pos2, World $world)
-    {
-        parent::__construct($pos1, $pos2, $world);
+    public function __construct(
+        Vector3 $pos1,
+        Vector3 $pos2,
+        World $world
+    ) {
+        parent::__construct(
+            $pos1,
+            $pos2,
+            $world
+        );
     }
 
-    public function isApplying(): bool
+    public function getVolume(): int
     {
-        return $this->activeTask !== null && !$this->activeTask->isCancelled();
+        return $this->getSizeX() * $this->getSizeY() * $this->getSizeZ();
+    }
+
+    public function getSizeX(): int
+    {
+        return $this->getMaxX() - $this->getMinX() + 1;
+    }
+
+    public function getSizeY(): int
+    {
+        return $this->getMaxY() - $this->getMinY() + 1;
+    }
+
+    public function getSizeZ(): int
+    {
+        return $this->getMaxZ() - $this->getMinZ() + 1;
+    }
+
+    public function getMinX(): int
+    {
+        return (int) min(
+            $this->getPos1()->x,
+            $this->getPos2()->x
+        );
+    }
+
+    public function getMinY(): int
+    {
+        return (int) min(
+            $this->getPos1()->y,
+            $this->getPos2()->y
+        );
+    }
+
+    public function getMinZ(): int
+    {
+        return (int) min(
+            $this->getPos1()->z,
+            $this->getPos2()->z
+        );
+    }
+
+    public function getMaxX(): int
+    {
+        return (int) max(
+            $this->getPos1()->x,
+            $this->getPos2()->x
+        );
+    }
+
+    public function getMaxY(): int
+    {
+        return (int) max(
+            $this->getPos1()->y,
+            $this->getPos2()->y
+        );
+    }
+
+    public function getMaxZ(): int
+    {
+        return (int) max(
+            $this->getPos1()->z,
+            $this->getPos2()->z
+        );
+    }
+
+    public function getCenter(): Position
+    {
+        return new Position(
+            ($this->getMinX() + $this->getMaxX() + 1) / 2,
+            ($this->getMinY() + $this->getMaxY() + 1) / 2,
+            ($this->getMinZ() + $this->getMaxZ() + 1) / 2,
+            $this->getWorld()
+        );
     }
 
     /**
-     * @param array<MineBlock> $blocks
+     * Every block position inside the box as a flat [x, y, z] triple, ordered
+     * top layer first so a mine fills from the ceiling down.
+     *
+     * Only useful for small volumes; {@link MineFillTask} derives coordinates
+     * arithmetically instead of materialising tens of thousands of arrays.
+     *
+     * @return list<array{int, int, int}>
      */
-    public function apply(array $blocks): void
+    public function getPositions(): array
     {
-        if (empty($blocks)) {
-            return;
+        $positions = [];
+
+        for (
+            $y = $this->getMaxY();
+            $y >= $this->getMinY();
+            --$y
+        ) {
+            for (
+                $x = $this->getMinX();
+                $x <= $this->getMaxX();
+                ++$x
+            ) {
+                for (
+                    $z = $this->getMinZ();
+                    $z <= $this->getMaxZ();
+                    ++$z
+                ) {
+                    $positions[] = [$x, $y, $z];
+                }
+            }
         }
 
-        // Cancel any previous run so two fills never overlap
-        if ($this->activeTask !== null) {
-            $this->activeTask->cancel();
-            $this->activeTask = null;
+        return $positions;
+    }
+
+    /**
+     * Builds the shuffled block pool for a refill.
+     *
+     * Percentages do not have to add up to 100: every entry is scaled by its
+     * share of the total, and the slots lost to rounding are filled with random
+     * entries so the visible distribution stays close to what was configured
+     * instead of always biasing towards the first block.
+     *
+     * @param list<MineBlock> $blocks
+     *
+     * @return list<Block>
+     */
+    public function buildPool(
+        array $blocks,
+        int $volume
+    ): array {
+        if (
+            $blocks === []
+            || $volume <= 0
+        ) {
+            return [];
         }
 
-        $world = $this->getWorld();
+        $entries = [];
 
-        $minX = (int) min($this->getPos1()->x, $this->getPos2()->x);
-        $minY = (int) min($this->getPos1()->y, $this->getPos2()->y);
-        $minZ = (int) min($this->getPos1()->z, $this->getPos2()->z);
+        foreach ($blocks as $block) {
+            $percent = $block->getPercent();
 
-        $maxX = (int) max($this->getPos1()->x, $this->getPos2()->x);
-        $maxY = (int) max($this->getPos1()->y, $this->getPos2()->y);
-        $maxZ = (int) max($this->getPos1()->z, $this->getPos2()->z);
-
-        $layerSize = ($maxX - $minX + 1) * ($maxZ - $minZ + 1);
-        $total = $layerSize * ($maxY - $minY + 1);
-
-        if ($total <= 0) {
-            return;
-        }
-
-        $pool = [];
-        foreach ($blocks as $mineBlock) {
-            $count = (int) floor($total * $mineBlock->getPercent() / 100);
-            if ($count <= 0) {
+            if ($percent <= 0) {
                 continue;
             }
-            $pool = array_merge($pool, array_fill(0, $count, $mineBlock->getBlock()));
+
+            $entries[] = [
+                'block' => $block->getBlock(),
+                'weight' => $percent
+            ];
         }
 
-        // Pad with the first block if percentages don't sum to 100
-        if (count($pool) < $total) {
-            $pool = array_merge(
-                $pool,
-                array_fill(0, $total - count($pool), $blocks[0]->getBlock())
+        if ($entries === []) {
+            return [];
+        }
+
+        $totalWeight = 0;
+
+        foreach ($entries as $entry) {
+            $totalWeight += $entry['weight'];
+        }
+
+        if ($totalWeight <= 0) {
+            return [];
+        }
+
+        $last = count($entries) - 1;
+        $pool = [];
+
+        foreach ($entries as $entry) {
+            $count = (int) floor(
+                $volume * ($entry['weight'] / $totalWeight)
             );
+
+            for (
+                $i = 0;
+                $i < $count;
+                ++$i
+            ) {
+                $pool[] = $entry['block'];
+            }
+        }
+
+        while (count($pool) < $volume) {
+            $pool[] = $entries[mt_rand(
+                0,
+                $last
+            )]['block'];
         }
 
         shuffle($pool);
 
-        // Teleport any player standing inside the box above it
-        foreach ($world->getPlayers() as $player) {
-            if ($this->isIn($player->getPosition())) {
-                $pos = $player->getPosition();
-                $player->teleport(new Vector3($pos->x, $maxY + 2, $pos->z));
+        return $pool;
+    }
+
+    /**
+     * Teleports anybody standing inside the box to just above it.
+     *
+     * Called right before a refill starts, so nobody ends up sealed inside the
+     * fresh blocks.
+     */
+    public function evacuatePlayers(): void
+    {
+        $top = $this->getMaxY() + 2;
+
+        foreach (
+            $this->getWorld()->getPlayers() as $player
+        ) {
+            $position = $player->getPosition();
+
+            if (!$this->isIn($position)) {
+                continue;
             }
+
+            $player->teleport(new Vector3(
+                $position->x,
+                $top,
+                $position->z
+            ));
         }
-
-        $task = new class(
-            $world,
-            $pool,
-            $minX,
-            $maxX,
-            $maxY,
-            $minY,
-            $minZ,
-            $maxZ
-        ) extends Task {
-            private int $offset = 0;
-
-            public function __construct(
-                private World $world,
-                private array $pool,
-                private int $minX,
-                private int $maxX,
-                private int $currentY,
-                private int $minY,
-                private int $minZ,
-                private int $maxZ
-            ) {}
-
-            public function onRun(): void
-            {
-                $poolSize = count($this->pool);
-
-                for ($x = $this->minX; $x <= $this->maxX; $x++) {
-                    for ($z = $this->minZ; $z <= $this->maxZ; $z++) {
-                        if ($this->offset >= $poolSize) {
-                            $this->getHandler()->cancel();
-                            return;
-                        }
-
-                        $block = $this->pool[$this->offset++];
-                        $this->world->setBlockAt($x, $this->currentY, $z, $block, false);
-                    }
-                }
-
-                $this->currentY--;
-
-                if ($this->currentY < $this->minY) {
-                    $this->getHandler()->cancel();
-                }
-            }
-        };
-
-        $this->activeTask = Main::getInstance()
-            ->getScheduler()
-            ->scheduleRepeatingTask($task, 1);
     }
 }

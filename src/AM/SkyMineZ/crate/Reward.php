@@ -56,6 +56,14 @@ final class Reward
         return self::TYPE_DEFAULT_WEIGHTS[$type];
     }
 
+    /**
+     * @return array<string, float> every rarity with its default weight
+     */
+    public static function types(): array
+    {
+        return self::TYPE_DEFAULT_WEIGHTS;
+    }
+
     public function getItem(): Item
     {
         return clone $this->item;
@@ -114,6 +122,9 @@ final class Reward
         return ($this->weight / $totalWeight) * 100;
     }
 
+    /**
+     * @return array{item: string, weight: float, type: string}
+     */
     public function toArray(): array
     {
         $serializer = new LittleEndianNbtSerializer();
@@ -131,6 +142,9 @@ final class Reward
         ];
     }
 
+    /**
+     * @param array<string, mixed> $data
+     */
     public static function fromArray(
         array $data
     ): ?self {
@@ -143,8 +157,14 @@ final class Reward
             return null;
         }
 
+        $encoded = $data['item'];
+
+        if (!is_string($encoded)) {
+            return null;
+        }
+
         $binary = base64_decode(
-            (string) $data['item'],
+            $encoded,
             true
         );
 
@@ -170,16 +190,19 @@ final class Reward
             return null;
         }
 
+        if (!is_numeric($data['weight'])) {
+            return null;
+        }
+
         $weight = (float) $data['weight'];
 
         if ($weight <= 0) {
             return null;
         }
 
-        $type = (string) (
-            $data['type']
-            ?? self::TYPE_COMMON
-        );
+        $type = isset($data['type']) && is_string($data['type'])
+            ? $data['type']
+            : self::TYPE_COMMON;
 
         return new self(
             $item,

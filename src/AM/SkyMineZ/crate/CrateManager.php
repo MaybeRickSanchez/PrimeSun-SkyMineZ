@@ -6,159 +6,136 @@ namespace AM\SkyMineZ\crate;
 
 use AM\SkyMineZ\Main;
 use AM\SkyMineZ\useless\ReadOnlyInventory;
-use JsonException;
+use AM\SkyMineZ\useless\SpreadTask;
 use pocketmine\block\VanillaBlocks;
 use pocketmine\math\Vector3;
+use pocketmine\player\Player;
 use pocketmine\world\Position;
 use pocketmine\world\World;
+use pocketmine\world\WorldManager;
 use RuntimeException;
+use Throwable;
 
+/**
+ * Owns every crate on the server.
+ *
+ * Crates live in plugin_data/crates.json. Keys are stored per crate by id, and
+ * rewards are serialised as base64 Bedrock NBT so the full item state survives a
+ * restart.
+ *
+ * Crates are indexed by their block position, because a crate lookup happens on
+ * every block interaction and a linear scan over every crate would make each
+ * click cost O(n).
+ */
 final class CrateManager
 {
-    /**
-     * @var array<string, Crate>
-     */
+    private const FILE_NAME = 'crates.json';
+
+    /** @var array<string, Crate> */
     private array $crates = [];
+
+    /**
+     * Position index: "worldFolder:x:y:z" => crate name.
+     *
+     * @var array<string, string>
+     */
+    private array $index = [];
 
     private ReadOnlyInventory $readOnlyInventory;
 
     public function __construct(
         private Main $main
     ) {
-        $this->readOnlyInventory =
-            new ReadOnlyInventory(
-                $this->main
-            );
+        $this->readOnlyInventory = new ReadOnlyInventory(
+            $this->main->getServer(),
+            $this->main
+        );
     }
 
     public function load(): void
     {
         $this->crates = [];
+        $this->index = [];
 
-        $db =
-            $this->main->getCrateDB();
+        $db = $this->main->getCrateDB();
+
+        $worldManager = $this->main->getServer()
+            ->getWorldManager();
 
         foreach (
-            $db->getAll()
-            as $crateName => $crateData
+            $db->getAll() as $crateName => $crateData
         ) {
             if (
-                !is_string($crateName) ||
-                !is_array($crateData)
+                !is_string($crateName)
+                || !is_array($crateData)
+                || !self::isStringMap($crateData)
             ) {
                 continue;
             }
 
-            if (
-                !isset(
-                    $crateData['world'],
-                    $crateData['x'],
-                    $crateData['y'],
-                    $crateData['z']
-                )
-            ) {
-                continue;
-            }
+            $crate = $this->createFromArray(
+                $crateName,
+                $crateData,
+                $worldManager
+            );
 
-            $worldName =
-                (string) $crateData['world'];
-
-            $worldManager =
-                $this->main
-                    ->getServer()
-                    ->getWorldManager();
-
-            $world =
-                $worldManager->getWorldByName(
-                    $worldName
+            if ($crate === null) {
+                $this->main->getLogger()->warning(
+                    "Skipped malformed crate '{$crateName}' in " . self::FILE_NAME
                 );
 
-            if ($world === null) {
-                if (
-                    $worldManager
-                        ->isWorldGenerated(
-                            $worldName
-                        )
-                ) {
-                    $worldManager->loadWorld(
-                        $worldName
-                    );
-
-                    $world =
-                        $worldManager
-                            ->getWorldByName(
-                                $worldName
-                            );
-                }
-            }
-
-            if ($world === null) {
                 continue;
             }
 
-            $position = new Position(
-                (float) $crateData['x'],
-                (float) $crateData['y'],
-                (float) $crateData['z'],
-                $world
-            );
-
-            $crate = new Crate(
-                $this->main,
-                $this->readOnlyInventory,
-                $crateName,
-                $position
-            );
-
-            foreach (
-                (array) (
-                    $crateData['keys'] ?? []
-                ) as $keyId
-            ) {
-                if (
-                    is_string($keyId)
-                ) {
-                    $crate->addKey(
-                        $keyId
-                    );
-                }
-            }
-
-            foreach (
-                (array) (
-                    $crateData['rewards'] ?? []
-                ) as $rewardData
-            ) {
-                if (
-                    !is_array($rewardData)
-                ) {
-                    continue;
-                }
-
-                $reward =
-                    Reward::fromArray(
-                        $rewardData
-                    );
-
-                if ($reward !== null) {
-                    $crate->addRewardObject(
-                        $reward
-                    );
-                }
-            }
-
-            $this->crates[
-            $crateName
-            ] = $crate;
+            $this->crates[$crateName] = $crate;
+            $this->index[
+                self::key(
+                    $crate->getPosition()
+                )
+            ] = $crateName;
 
             $crate->spawn();
             $crate->update();
         }
     }
 
-    public function addCrate(
+    public function saveAll(): void
+    {
+        $db = $this->main->getCrateDB();
+
+        $data = [];
+
+        foreach (
+            $this->crates as $name => $crate
+        ) {
+            $data[$name] = $crate->toArray();
+        }
+
+        $db->setAll($data);
+        $db->save();
+    }
+
+    public function save(
+        string $name
+    ): void {
+        $crate = $this->crates[$name] ?? null;
+
+        if ($crate === null) {
+            return;
+        }
+
+        $this->main->getCrateDB()->set(
+            $name,
+            $crate->toArray()
+        );
+    }
+
+    /**
+     * @throws RuntimeException when the name is taken or the world is missing
+     */
+    public function create(
         string $name,
-        array|Vector3 $position,
+        Vector3 $position,
         string|World $world
     ): Crate {
         if ($this->hasCrate($name)) {
@@ -167,26 +144,16 @@ final class CrateManager
             );
         }
 
-        $world =
-            $this->resolveWorld($world);
-
-        if (
-            $position instanceof Vector3
-        ) {
-            $position = new Position(
-                $position->x,
-                $position->y,
-                $position->z,
-                $world
-            );
-        } else {
-            $position = new Position(
-                (float) $position['x'],
-                (float) $position['y'],
-                (float) $position['z'],
-                $world
-            );
-        }
+        $position = new Position(
+            $position->x,
+            $position->y,
+            $position->z,
+            $this->resolveWorld(
+                $world,
+                $this->main->getServer()
+                    ->getWorldManager()
+            )
+        );
 
         $crate = new Crate(
             $this->main,
@@ -195,87 +162,29 @@ final class CrateManager
             $position
         );
 
-        $this->crates[$name] =
-            $crate;
+        $this->crates[$name] = $crate;
+        $this->index[self::key(
+            $position
+        )] = $name;
 
         $crate->spawn();
+
+        $this->save($name);
 
         return $crate;
     }
 
-    public function getCrate(
-        string $name
-    ): ?Crate {
-        return $this->crates[$name] ?? null;
-    }
-
-    public function hasCrate(
+    public function remove(
         string $name
     ): bool {
-        return isset(
-            $this->crates[$name]
-        );
-    }
-
-    public function getCrateAt(
-        Vector3 $position
-    ): ?Crate {
-        $x = $position->getFloorX();
-        $y = $position->getFloorY();
-        $z = $position->getFloorZ();
-
-        $world =
-            $position instanceof Position
-                ? $position->getWorld()
-                : null;
-
-        foreach (
-            $this->crates as $crate
-        ) {
-            $cratePosition =
-                $crate->getPosition();
-
-            if (
-                $world !== null &&
-                $cratePosition->getWorld()
-                !== $world
-            ) {
-                continue;
-            }
-
-            if (
-                $cratePosition->getFloorX()
-                === $x &&
-                $cratePosition->getFloorY()
-                === $y &&
-                $cratePosition->getFloorZ()
-                === $z
-            ) {
-                return $crate;
-            }
-        }
-
-        return null;
-    }
-
-    /**
-     * @throws JsonException
-     */
-    public function removeCrate(
-        string $name
-    ): bool {
-        $crate =
-            $this->getCrate($name);
+        $crate = $this->crates[$name] ?? null;
 
         if ($crate === null) {
             return false;
         }
 
-        $position =
-            $crate->getPosition();
-
-        $world =
-            $position->getWorld();
+        $position = $crate->getPosition();
+        $world = $position->getWorld();
 
         $crate->despawn();
 
@@ -292,11 +201,11 @@ final class CrateManager
         }
 
         unset(
-            $this->crates[$name]
+            $this->crates[$name],
+            $this->index[self::key($position)]
         );
 
-        $db =
-            $this->main->getCrateDB();
+        $db = $this->main->getCrateDB();
 
         if ($db->exists($name)) {
             $db->remove($name);
@@ -307,48 +216,16 @@ final class CrateManager
         return true;
     }
 
-    /**
-     * @throws JsonException
-     */
-    public function saveCrate(
+    public function hasCrate(
         string $name
-    ): void {
-        $crate =
-            $this->getCrate($name);
-
-        if ($crate === null) {
-            return;
-        }
-
-        $db =
-            $this->main->getCrateDB();
-
-        $db->set(
-            $name,
-            $crate->toArray()
-        );
-
-        $db->save();
+    ): bool {
+        return isset($this->crates[$name]);
     }
 
-    /**
-     * @throws JsonException
-     */
-    public function saveAll(): void
-    {
-        $db =
-            $this->main->getCrateDB();
-
-        foreach (
-            $this->crates as $crate
-        ) {
-            $db->set(
-                $crate->getName(),
-                $crate->toArray()
-            );
-        }
-
-        $db->save();
+    public function getCrate(
+        string $name
+    ): ?Crate {
+        return $this->crates[$name] ?? null;
     }
 
     /**
@@ -359,55 +236,212 @@ final class CrateManager
         return $this->crates;
     }
 
-    public function getMain(): Main
+    /**
+     * @return list<string>
+     */
+    public function getNames(): array
     {
-        return $this->main;
+        return array_keys($this->crates);
+    }
+
+    public function count(): int
+    {
+        return count($this->crates);
+    }
+
+    /**
+     * The crate standing on a block, or null. O(1) through the position index.
+     */
+    public function getCrateAt(
+        Position $position
+    ): ?Crate {
+        $name = $this->index[self::key(
+            $position
+        )] ?? null;
+
+        if ($name === null) {
+            return null;
+        }
+
+        return $this->crates[$name] ?? null;
+    }
+
+    public function getReadOnlyInventory(): ReadOnlyInventory
+    {
+        return $this->readOnlyInventory;
+    }
+
+    /**
+     * Pushes every crate label to a player who just spawned in.
+     */
+    public function spawnTo(
+        Player $player
+    ): void {
+        SpreadTask::spread(
+            $this->main,
+            $this->crates,
+            8,
+            static function(
+                mixed $crate
+            ) use ($player): void {
+                if (
+                    !$crate instanceof Crate
+                    || $crate->getWorld() !==
+                    $player->getWorld()
+                ) {
+                    return;
+                }
+
+                $crate->spawnText($player);
+            }
+        );
+    }
+
+    /**
+     * @param array<mixed> $array
+     *
+     * @phpstan-assert-if-true array<string, mixed> $array
+     */
+    private static function isStringMap(
+        array $array
+    ): bool {
+        foreach (
+            array_keys($array) as $key
+        ) {
+            if (!is_string($key)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * @param array<string, mixed> $data
+     */
+    private function createFromArray(
+        string $name,
+        array $data,
+        WorldManager $worldManager
+    ): ?Crate {
+        if (
+            !isset(
+                $data['world'],
+                $data['x'],
+                $data['y'],
+                $data['z']
+            )
+            || !is_string($data['world'])
+            || !is_numeric($data['x'])
+            || !is_numeric($data['y'])
+            || !is_numeric($data['z'])
+        ) {
+            return null;
+        }
+
+        $world = $this->resolveWorldOrNull(
+            $data['world'],
+            $worldManager
+        );
+
+        if ($world === null) {
+            return null;
+        }
+
+        $position = new Position(
+            (float) $data['x'],
+            (float) $data['y'],
+            (float) $data['z'],
+            $world
+        );
+
+        $crate = new Crate(
+            $this->main,
+            $this->readOnlyInventory,
+            $name,
+            $position
+        );
+
+        foreach (
+            (array) ($data['keys'] ?? []) as $keyId
+        ) {
+            if (is_string($keyId) && $keyId !== '') {
+                $crate->addKey($keyId);
+            }
+        }
+
+        foreach (
+            (array) ($data['rewards'] ?? []) as $rewardData
+        ) {
+            if (
+                !is_array($rewardData)
+                || !self::isStringMap($rewardData)
+            ) {
+                continue;
+            }
+
+            $reward = Reward::fromArray($rewardData);
+
+            if ($reward !== null) {
+                $crate->addRewardObject($reward);
+            }
+        }
+
+        return $crate;
+    }
+
+    private function resolveWorldOrNull(
+        string $name,
+        WorldManager $worldManager
+    ): ?World {
+        try {
+            return $this->resolveWorld(
+                $name,
+                $worldManager
+            );
+        } catch (Throwable) {
+            return null;
+        }
     }
 
     private function resolveWorld(
-        string|World $world
+        string|World $world,
+        WorldManager $worldManager
     ): World {
         if ($world instanceof World) {
             return $world;
         }
 
-        $worldManager =
-            $this->main
-                ->getServer()
-                ->getWorldManager();
+        $resolved = $worldManager->getWorldByName($world);
 
-        $resolvedWorld =
-            $worldManager->getWorldByName(
-                $world
-            );
+        if ($resolved === null && $worldManager->isWorldGenerated($world)) {
+            $worldManager->loadWorld($world);
 
-        if ($resolvedWorld !== null) {
-            return $resolvedWorld;
+            $resolved = $worldManager->getWorldByName($world);
         }
 
-        if (
-            $worldManager->isWorldGenerated(
-                $world
-            )
-        ) {
-            $worldManager->loadWorld(
-                $world
+        if ($resolved === null) {
+            throw new RuntimeException(
+                "World '$world' could not be loaded."
             );
-
-            $resolvedWorld =
-                $worldManager->getWorldByName(
-                    $world
-                );
-
-            if (
-                $resolvedWorld !== null
-            ) {
-                return $resolvedWorld;
-            }
         }
 
-        throw new RuntimeException(
-            "World '$world' could not be loaded."
-        );
+        return $resolved;
+    }
+
+    /**
+     * Position index key. Uses the world *folder* name because that is what is
+     * stored on disk and stays stable across restarts.
+     */
+    private static function key(
+        Position $position
+    ): string {
+        return $position->getWorld()->getFolderName()
+            . ':'
+            . $position->getFloorX()
+            . ':'
+            . $position->getFloorY()
+            . ':'
+            . $position->getFloorZ();
     }
 }

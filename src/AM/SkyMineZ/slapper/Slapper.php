@@ -8,6 +8,7 @@ use pocketmine\entity\Human;
 use pocketmine\entity\Location;
 use pocketmine\entity\Skin;
 use pocketmine\player\Player;
+use pocketmine\world\Position;
 
 final class Slapper
 {
@@ -110,6 +111,39 @@ final class Slapper
     public function getLocation(): Location
     {
         return $this->location;
+    }
+
+    /**
+     * Moves the slapper, keeping its yaw and pitch.
+     *
+     * The live entity is teleported rather than respawned so the skin and name
+     * tag stay put and no client sees a disappear/reappear flicker.
+     */
+    public function setPosition(
+        Position $position
+    ): self {
+        return $this->setLocation(
+            new Location(
+                $position->x,
+                $position->y,
+                $position->z,
+                $position->getWorld(),
+                $this->location->yaw,
+                $this->location->pitch
+            )
+        );
+    }
+
+    public function setLocation(
+        Location $location
+    ): self {
+        $this->location = $location;
+
+        if ($this->entity !== null) {
+            $this->entity->teleport($location);
+        }
+
+        return $this;
     }
 
     public function getSkin(): Skin
@@ -225,6 +259,25 @@ final class Slapper
         );
     }
 
+    /**
+     * @return array{
+     *     world: string,
+     *     x: float,
+     *     y: float,
+     *     z: float,
+     *     yaw: float,
+     *     pitch: float,
+     *     commands: list<string>,
+     *     messages: list<string>,
+     *     skin: array{
+     *         id: string,
+     *         data: string,
+     *         cape: string,
+     *         geometryName: string,
+     *         geometryData: string
+     *     }
+     * }
+     */
     public function toArray(): array
     {
         return [

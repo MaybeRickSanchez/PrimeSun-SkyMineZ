@@ -1,0 +1,148 @@
+# ---------------------------------------------------------------------------
+# SkyMineZ
+# Every value below can be changed while the server is running, but the
+# plugin only re-reads the file after /skymine reload.
+# ---------------------------------------------------------------------------
+
+# Prefix prepended to every message the plugin sends. Leave empty for none.
+prefix: "§b§lSkyMine §7§8| §r"
+
+# ---------------------------------------------------------------------------
+# Sidebar (scoreboard)
+# ---------------------------------------------------------------------------
+scoreboard:
+  # Seconds a player must stay inside the spawn radius before the welcome
+  # screen is replaced by the stats screen.
+  spawn-welcome-seconds: 60
+  # Seconds a player may stay outside the radius before falling back to the
+  # stats screen. Prevents flicker when someone walks two blocks away.
+  spawn-leave-seconds: 5
+  # Radius (in blocks) around the default world spawn that counts as "spawn".
+  spawn-radius: 3.0
+  # How many players get their sidebar refreshed per tick. Lower this if you
+  # see tick spikes on very busy servers.
+  players-per-tick: 4
+  # Ticks between two sidebar refresh passes (20 = once per second).
+  update-ticks: 20
+
+  lobby:
+    title: "§d§lSkyMine"
+    lines:
+      - "§f"
+      - "§d{prefix_name}"
+      - "§f"
+      - "§eGOLD: §f{gold}"
+      - "§eMONEY: §f{money}"
+      - "§eMINED: §f{mined}"
+      - "§eDEATHS: §f{deaths}"
+      - "§eKILL STREAK: §f{kill_streak}"
+      - "§eKILLS: §f{kills}"
+      - "§ePVP: §f{pvp}"
+      - "§f"
+      - "§aSERVER.IP §f{server_address}"
+
+  welcome:
+    title: "§d§lSkyMine"
+    lines:
+      - "§f"
+      - "§d§lBE SKYMINE KHOSH AMADID!"
+      - "§f"
+      - "§7HADAF SHOMA IN AST KE ORE"
+      - "§7HA RA MINE KONID, TOOLS VA"
+      - "§7ARMOR KHOD RA ERTEQA DAHID"
+      - "§7VA BE ANDAZEI GHAVI SHAVID"
+      - "§7KE BE MINE HAYE SAKHT"
+      - "§7NOFOZ KONID VA BA PLAYERS,"
+      - "§7MOBS, VA BOSS HA RO BE RO"
+      - "§7SHAVID."
+      - "§f"
+      - "§aSERVER.IP §f{server_address}"
+
+# ---------------------------------------------------------------------------
+# PvP
+# ---------------------------------------------------------------------------
+pvp:
+  # Whether PvP is enabled for a player who never changed the setting.
+  default-enabled: true
+  # Message shown when someone tries to hit a player who has PvP off.
+  disabled-message: "§c{player} has PvP disabled."
+
+# ---------------------------------------------------------------------------
+# Economy
+# ---------------------------------------------------------------------------
+economy:
+  # Balance given to a player the first time they join. Applied only when the
+  # player has no entry in money_economy.json / gold_economy.json yet.
+  money-default: 0
+  gold-default: 0
+
+# ---------------------------------------------------------------------------
+# Crates
+# ---------------------------------------------------------------------------
+crates:
+  # Total frames played before the winner is revealed.
+  animation-steps: 36
+  # Ticks between revealing the reward and handing it over.
+  reveal-delay: 20
+  # Ticks per frame while the crate is spinning, keyed by the first frame
+  # index of the range.
+  animation-delays:
+    "0": 2
+    "12": 3
+    "22": 4
+    "29": 5
+    "34": 7
+
+# ---------------------------------------------------------------------------
+# Mines
+# ---------------------------------------------------------------------------
+mines:
+  # Default seconds between two automatic resets. A mine can override this
+  # with /mine setinterval.
+  reset-interval: 300
+  # Blocks written per tick while a mine is filling. Lower this value if
+  # resetting a large mine causes a tick spike.
+  blocks-per-tick: 3000
+
+# ---------------------------------------------------------------------------
+# Outposts
+# ---------------------------------------------------------------------------
+outposts:
+  # Ticks between two outpost ticks.
+  tick-interval: 20
+  # How many capture points a player gains per tick while inside an outpost.
+  capture-min: 1
+  capture-max: 3
+  # Capture points needed to own an outpost.
+  capture-required: 100
+  # Seconds an outpost stays locked after it has been captured.
+  cooldown-duration: 1800
+  # Seconds between two gold payouts for the owner, and the chance in percent
+  # that a payout actually happens when the timer elapses.
+  gold-interval: 600
+  gold-chance: 50
+  gold-reward: 1
+
+# ---------------------------------------------------------------------------
+# Lag protection
+# ---------------------------------------------------------------------------
+lagmaker:
+  enabled: true
+  # Merge item entities that spawn next to each other. Strongly recommended:
+  # it keeps the entity count low when players spam-drop stacks.
+  auto-stack: true
+  # Block radius used when looking for a nearby item entity to merge into.
+  stack-radius: 1.5
+  # Max item entities a single player may have on the ground before further
+  # drops are refused. 0 disables the limit.
+  max-drops-per-player: 15
+  cleanup:
+    # off = never despawn anything
+    # ttl = despawn item entities older than ttl-seconds
+    # all = despawn every item entity on every world
+    mode: ttl
+    ttl-seconds: 900
+    # Ticks between two cleanup passes (20 * 60 * 30 = 30 minutes).
+    interval: 36000
+    # Item entities despawned per tick during a cleanup pass.
+    per-tick: 200

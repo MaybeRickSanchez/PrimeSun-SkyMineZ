@@ -1,0 +1,26 @@
+# Static analysis for SkyMineZ.
+#
+# PocketMine-MP is not a composer dependency of this plugin: the server provides
+# it at runtime. Point `scanDirectories` at a server checkout before running
+# `composer stan`:
+#
+#   composer stan                       # uses ../../PocketMine-MP by default
+#   SKYMINEZ_PM=/path/to/PocketMine-MP composer stan
+#
+# The path below is relative to this file, i.e. the server folder that contains
+# the plugins directory.
+parameters:
+    level: 9
+    phpVersion: 80100
+    paths:
+        - src
+    scanDirectories:
+        - %currentWorkingDirectory%/../../PocketMine-MP/src
+        - %currentWorkingDirectory%/../../PocketMine-MP/generated
+    treatPhpDocTypesAsCertain: false
+    reportUnmatchedIgnoredErrors: false
+    ignoreErrors:
+        # World::getEntities() and friends are annotated with @phpstan-return
+        # referring to a class PHPStan cannot resolve from a scanned-only file.
+        - identifier: class.notFound
+          path: src/AM/SkyMineZ/lagmaker/LagMaker.php

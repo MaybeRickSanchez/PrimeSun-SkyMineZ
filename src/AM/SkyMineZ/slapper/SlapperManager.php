@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace AM\SkyMineZ\slapper;
 
 use AM\SkyMineZ\Main;
+use AM\SkyMineZ\useless\SpreadTask;
 use pocketmine\block\Block;
 use pocketmine\entity\Entity;
+use pocketmine\entity\Location;
 use pocketmine\math\Vector3;
 use pocketmine\player\Player;
 use pocketmine\utils\Config;
@@ -31,6 +33,16 @@ final class SlapperManager
      */
     private array $blocks = [];
 
+    /**
+     * Block position index: "worldFolder:x:y:z" => slapper block name.
+     *
+     * A lookup happens on every block interaction, so a linear scan over every
+     * slapper block would make each click cost O(n).
+     *
+     * @var array<string, string>
+     */
+    private array $blockIndex = [];
+
     private Config $db;
 
     public function __construct(
@@ -50,14 +62,16 @@ final class SlapperManager
         $this->slappers = [];
         $this->entities = [];
         $this->blocks = [];
+        $this->blockIndex = [];
 
         foreach (
             $this->db->getAll()
             as $name => $data
         ) {
-            if (
-                !is_string($name) ||
-                !is_array($data)
+if (
+                !is_string($name)
+                || !is_array($data)
+                || !self::isStringMap($data)
             ) {
                 continue;
             }
@@ -81,8 +95,9 @@ final class SlapperManager
                 ) as $blockName => $blockData
             ) {
                 if (
-                    !is_string($blockName) ||
-                    !is_array($blockData)
+                    !is_string($blockName)
+                    || !is_array($blockData)
+                    || !self::isStringMap($blockData)
                 ) {
                     continue;
                 }
@@ -99,6 +114,10 @@ final class SlapperManager
 
                 $this->blocks[$blockName] =
                     $block;
+
+                $this->blockIndex[self::positionKey(
+                    $block->getPosition()
+                )] = $blockName;
             }
 
             $this->spawn($name);
@@ -112,6 +131,9 @@ final class SlapperManager
         }
     }
 
+    /**
+     * @param array<string, mixed> $data
+     */
     private function createSlapperFromArray(
         string $name,
         array $data
@@ -124,13 +146,20 @@ final class SlapperManager
                 $data['z'],
                 $data['skin']
             )
+            || !is_string($data['world'])
+            || !is_numeric($data['x'])
+            || !is_numeric($data['y'])
+            || !is_numeric($data['z'])
         ) {
             return null;
         }
 
+        $yaw = $data['yaw'] ?? 0;
+        $pitch = $data['pitch'] ?? 0;
+
         $world =
             $this->resolveWorld(
-                (string) $data['world']
+                $data['world']
             );
 
         if ($world === null) {
@@ -147,13 +176,13 @@ final class SlapperManager
         }
 
         $location =
-            new \pocketmine\entity\Location(
+            new Location(
                 (float) $data['x'],
                 (float) $data['y'],
                 (float) $data['z'],
                 $world,
-                (float) ($data['yaw'] ?? 0),
-                (float) ($data['pitch'] ?? 0)
+                is_numeric($yaw) ? (float) $yaw : 0.0,
+                is_numeric($pitch) ? (float) $pitch : 0.0
             );
 
         $slapper = new Slapper(
@@ -374,6 +403,55 @@ final class SlapperManager
         $this->entities = [];
     }
 
+    /**
+     * Pushes every slapper entity and block label to a player who just spawned
+     * in. Spread over ticks so a server with hundreds of slappers does not send
+     * them all in one tick.
+     */
+    public function spawnTo(
+        Player $player
+    ): void {
+        SpreadTask::spread(
+            $this->main,
+            $this->slappers,
+            8,
+            static function(
+                mixed $slapper
+            ) use ($player): void {
+                if (
+                    !$slapper instanceof Slapper
+                    || $slapper->getLocation()
+                        ->getWorld() !==
+                    $player->getWorld()
+                ) {
+                    return;
+                }
+
+                $slapper->getEntity()?->spawnTo(
+                    $player
+                );
+            }
+        );
+
+        SpreadTask::spread(
+            $this->main,
+            $this->blocks,
+            8,
+            static function(
+                mixed $block
+            ) use ($player): void {
+                if (
+                    !$block instanceof SlapperBlock
+                    || $block->getWorld() !== $player->getWorld()
+                ) {
+                    return;
+                }
+
+                $block->spawnText($player);
+            }
+        );
+    }
+
     public function addBlock(
         string $name,
         Position $position,
@@ -407,6 +485,10 @@ final class SlapperManager
         $this->blocks[$name] =
             $slapperBlock;
 
+        $this->blockIndex[self::positionKey(
+            $position
+        )] = $name;
+
         $slapperBlock->spawn();
 
         return $slapperBlock;
@@ -438,6 +520,43 @@ final class SlapperManager
         return isset(
             $this->slappers[$name]
         );
+    }
+
+    /**
+     * Moves an existing slapper, keeping its commands, messages and skin.
+     *
+     * The entity is teleported rather than respawned, so no client sees the NPC
+     * disappear and reappear.
+     */
+    public function move(
+        string $name,
+        Position $position
+    ): bool {
+        $slapper = $this->getSlapper($name);
+
+        if ($slapper === null) {
+            return false;
+        }
+
+        $entity = $slapper->getEntity();
+
+        if ($entity !== null) {
+            unset(
+                $this->entities[$entity->getId()]
+            );
+        }
+
+        $slapper->setPosition($position);
+
+        $entity = $slapper->getEntity();
+
+        if ($entity !== null) {
+            $this->entities[$entity->getId()] = $slapper;
+        }
+
+        $this->save($name);
+
+        return true;
     }
 
     /**
@@ -498,50 +617,21 @@ final class SlapperManager
         return $result;
     }
 
+    /**
+     * The slapper block standing at a position, or null. O(1).
+     */
     public function getBlockAt(
         Vector3 $position
     ): ?SlapperBlock {
-        $x =
-            $position->getFloorX();
+        $name = $this->blockIndex[self::positionKey(
+            $position
+        )] ?? null;
 
-        $y =
-            $position->getFloorY();
-
-        $z =
-            $position->getFloorZ();
-
-        $world =
-            $position instanceof Position
-                ? $position->getWorld()
-                : null;
-
-        foreach (
-            $this->blocks as $block
-        ) {
-            $blockPosition =
-                $block->getPosition();
-
-            if (
-                $world !== null &&
-                $blockPosition->getWorld()
-                !== $world
-            ) {
-                continue;
-            }
-
-            if (
-                $blockPosition->getFloorX()
-                === $x &&
-                $blockPosition->getFloorY()
-                === $y &&
-                $blockPosition->getFloorZ()
-                === $z
-            ) {
-                return $block;
-            }
+        if ($name === null) {
+            return null;
         }
 
-        return null;
+        return $this->blocks[$name] ?? null;
     }
 
     public function hasBlock(
@@ -592,7 +682,10 @@ final class SlapperManager
             $block->remove();
 
             unset(
-                $this->blocks[$blockName]
+                $this->blocks[$blockName],
+                $this->blockIndex[self::positionKey(
+                    $block->getPosition()
+                )]
             );
         }
 
@@ -612,7 +705,10 @@ final class SlapperManager
         $block->remove();
 
         unset(
-            $this->blocks[$name]
+            $this->blocks[$name],
+            $this->blockIndex[self::positionKey(
+                $block->getPosition()
+            )]
         );
 
         return true;
@@ -688,6 +784,9 @@ final class SlapperManager
         return $this->db;
     }
 
+    /**
+     * @param array<string, mixed> $data
+     */
     private function createBlockFromArray(
         string $name,
         array $data
@@ -701,13 +800,18 @@ final class SlapperManager
                 $data['slapper'],
                 $data['block']
             )
+            || !is_string($data['world'])
+            || !is_string($data['slapper'])
+            || !is_numeric($data['x'])
+            || !is_numeric($data['y'])
+            || !is_numeric($data['z'])
         ) {
             return null;
         }
 
         $world =
             $this->resolveWorld(
-                (string) $data['world']
+                $data['world']
             );
 
         if ($world === null) {
@@ -734,8 +838,47 @@ final class SlapperManager
             $name,
             $position,
             $block,
-            (string) $data['slapper']
+            $data['slapper']
         );
+    }
+
+    /**
+     * @param array<mixed> $array
+     *
+     * @phpstan-assert-if-true array<string, mixed> $array
+     */
+    private static function isStringMap(
+        array $array
+    ): bool {
+        foreach (
+            array_keys($array) as $key
+        ) {
+            if (!is_string($key)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * Position index key. Uses the world *folder* name because that is what is
+     * stored on disk and stays stable across restarts.
+     */
+    private static function positionKey(
+        Vector3 $position
+    ): string {
+        $world = $position instanceof Position
+            ? $position->getWorld()
+            : null;
+
+        return ($world?->getFolderName() ?? '?')
+            . ':'
+            . $position->getFloorX()
+            . ':'
+            . $position->getFloorY()
+            . ':'
+            . $position->getFloorZ();
     }
 
     private function resolveWorld(

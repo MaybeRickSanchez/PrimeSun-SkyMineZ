@@ -5,48 +5,63 @@ declare(strict_types=1);
 namespace AM\SkyMineZ\lagmaker;
 
 use AM\SkyMineZ\Main;
+use AM\SkyMineZ\useless\SpreadTask;
 use pocketmine\entity\object\ItemEntity;
 use pocketmine\event\Listener;
 use pocketmine\event\entity\EntityDespawnEvent;
 use pocketmine\event\entity\ItemSpawnEvent;
 use pocketmine\event\player\PlayerDropItemEvent;
 use pocketmine\item\Item;
+use pocketmine\player\Player;
 use pocketmine\math\AxisAlignedBB;
-use pocketmine\scheduler\ClosureTask;
+use pocketmine\math\Vector3;
+use pocketmine\scheduler\Task;
+use pocketmine\scheduler\TaskHandler;
 use pocketmine\world\World;
 
+/**
+ * Keeps item entities from turning the server into a lag machine.
+ *
+ * Three things happen here, all driven by config.yml:
+ *
+ *  1. Items dropped next to each other are merged into one entity
+ *     (`lagmaker.auto-stack`). This is the big one: dropping 64 stacks of stone
+ *     creates 64 entities, while merging keeps it at one.
+ *  2. A player may only have `lagmaker.max-drops-per-player` item entities on the
+ *     ground; further drops are refused unless they would merge with an existing
+ *     stack.
+ *  3. Old leftovers are swept up by a periodic cleanup pass
+ *     (`lagmaker.cleanup`). The mode decides whether it only removes items older
+ *     than a TTL (the default) or every item entity on every world.
+ *
+ * Every pass is spread across ticks: a world with 50,000 leftover items must not
+ * be walked in one tick.
+ */
 final class LagMaker implements Listener
 {
-    private const CLEANUP_INTERVAL = 20 * 60 * 30;
-
-    private const ITEMS_PER_TICK = 100;
-
-    private const MAX_DROPS_PER_PLAYER = 15;
-
-    private const STACK_RADIUS = 1.5;
+    public const MODE_OFF = 'off';
+    public const MODE_TTL = 'ttl';
+    public const MODE_ALL = 'all';
 
     /**
-     * @var array<int, ItemEntity>
+     * Drop entries stay valid for this many ticks before the matching spawned
+     * item is no longer attributed to the player who dropped it.
      */
-    private array $queue = [];
-
-    private bool $cleaning = false;
-
-    private int $ticksUntilCleanup = self::CLEANUP_INTERVAL;
-
-    private int $currentTick = 0;
+    private const PENDING_WINDOW = 10;
 
     /**
-     * @var array<string, int>
+     * @var array<string, int> owner name => live item entities
      */
     private array $dropCounts = [];
 
     /**
-     * @var array<int, string>
+     * @var array<int, array{owner: string, spawnTick: int}> keyed by spl_object_id
      */
     private array $trackedItems = [];
 
     /**
+     * Drops requested but not yet seen as an entity.
+     *
      * @var array<int, array{
      *     player: string,
      *     itemName: string,
@@ -59,126 +74,226 @@ final class LagMaker implements Listener
      */
     private array $pendingDrops = [];
 
+    /** @var TaskHandler<LagMakerTask>|null */
+    private ?TaskHandler $task = null;
+
+    private int $currentTick = 0;
+
+    private int $ticksUntilCleanup;
+
+    /** @var array<int, ItemEntity> */
+    private array $cleanupQueue = [];
+
+    private bool $cleaning = false;
+
     public function __construct(
         private Main $plugin
     ) {
-        $this->plugin->getServer()
-            ->getPluginManager()
-            ->registerEvents($this, $this->plugin);
+        $plugin->getServer()->getPluginManager()->registerEvents(
+            $this,
+            $plugin
+        );
 
-        $this->plugin->getScheduler()->scheduleRepeatingTask(
-            new ClosureTask(
-                function (): void {
-                    $this->tick();
-                }
-            ),
+        $this->ticksUntilCleanup = $this->getCleanupInterval();
+
+        $this->task = $plugin->getScheduler()->scheduleRepeatingTask(
+            new LagMakerTask($this),
             1
         );
     }
 
-    private function tick(): void
+    public function stop(): void
+    {
+        $this->task?->cancel();
+        $this->task = null;
+
+        $this->cleanupQueue = [];
+        $this->cleaning = false;
+    }
+
+    /**
+     * Enables or disables the automatic passes. Drops stay limited even while
+     * disabled, because losing a player's items would be worse than a lag spike.
+     */
+    public function setEnabled(
+        bool $enabled
+    ): void {
+        $this->plugin->getConfigManager()->set(
+            'lagmaker.enabled',
+            $enabled
+        );
+
+        $this->plugin->getConfigManager()->save();
+    }
+
+    public function isEnabled(): bool
+    {
+        return $this->plugin
+            ->getConfigManager()
+            ->getBool('lagmaker.enabled', true);
+    }
+
+    public function getMode(): string
+    {
+        $mode = strtolower(
+            $this->plugin
+                ->getConfigManager()
+                ->getString('lagmaker.cleanup.mode', self::MODE_TTL)
+        );
+
+        return match ($mode) {
+            self::MODE_OFF, self::MODE_ALL => $mode,
+            default => self::MODE_TTL
+        };
+    }
+
+    /**
+     * Number of item entities a player currently owns.
+     */
+    public function getDropCount(
+        string $playerName
+    ): int {
+        return $this->dropCounts[strtolower(
+            $playerName
+        )] ?? 0;
+    }
+
+    /**
+     * One tick.
+     */
+    public function tick(): void
     {
         ++$this->currentTick;
 
         $this->cleanupPendingDrops();
 
         if ($this->cleaning) {
-            $this->processBatch();
+            $this->processCleanupBatch();
 
             return;
         }
 
-        --$this->ticksUntilCleanup;
-
-        if ($this->ticksUntilCleanup > 0) {
+        if (!$this->isEnabled()) {
             return;
         }
 
-        $this->ticksUntilCleanup = self::CLEANUP_INTERVAL;
+        if (--$this->ticksUntilCleanup > 0) {
+            return;
+        }
+
+        $this->ticksUntilCleanup = $this->getCleanupInterval();
 
         $this->startCleanup();
     }
 
-    public function onPlayerDrop(PlayerDropItemEvent $event): void
-    {
-        $player = $event->getPlayer();
+    public function onPlayerDrop(
+        PlayerDropItemEvent $event
+    ): void {
         $item = $event->getItem();
 
         if ($item->isNull()) {
             return;
         }
 
+        $max = $this->getMaxDropsPerPlayer();
+
+        if ($max <= 0) {
+            return;
+        }
+
+        $player = $event->getPlayer();
         $playerName = strtolower(
             $player->getName()
         );
 
-        $currentDrops =
-            ($this->dropCounts[$playerName] ?? 0)
-            + $this->getPendingDropCount($playerName);
-
-        if ($currentDrops >= self::MAX_DROPS_PER_PLAYER) {
-            if (!$this->canStackNearby(
-                $player->getWorld(),
-                $player->getPosition()->x,
-                $player->getPosition()->y,
-                $player->getPosition()->z,
-                $item
-            )) {
-                $event->cancel();
-
-                return;
-            }
-        }
-
-        $location = $player->getLocation();
-
-        $this->pendingDrops[] = [
-            'player' => $playerName,
-            'itemName' => $item->getName(),
-            'world' => $player->getWorld(),
-            'x' => $location->x,
-            'y' => $location->y,
-            'z' => $location->z,
-            'expiresAt' => $this->currentTick + 10
-        ];
-    }
-
-    public function onItemSpawn(ItemSpawnEvent $event): void
-    {
-        $entity = $event->getEntity();
-
-        if (!$entity instanceof ItemEntity) {
-            return;
-        }
-
-        $owner = strtolower(
-            $entity->getThrower()
+        $current = $this->getDropCount(
+            $playerName
+        ) + $this->getPendingDropCount(
+            $playerName
         );
 
-        if ($owner === '') {
-            $owner = $this->findPendingOwner($entity);
+        if ($current < $max) {
+            $this->trackPendingDrop(
+                $player,
+                $item
+            );
 
-            if ($owner !== null) {
-                $entity->setThrower($owner);
-            }
-        }
-
-        if ($owner === '') {
             return;
         }
 
-        $entityId = spl_object_id($entity);
+        /*
+         * At the cap the drop is only allowed if it can merge into something
+         * already on the ground. Refusing those too would make players unable to
+         * drop anything at all, which is far more annoying than a full floor.
+         */
+        if (
+            $this->canStackNearby(
+                $player->getWorld(),
+                $player->getPosition(),
+                $item
+            )
+        ) {
+            $this->trackPendingDrop(
+                $player,
+                $item
+            );
 
-        if (!isset($this->trackedItems[$entityId])) {
-            $this->trackedItems[$entityId] = $owner;
-
-            ++$this->dropCounts[$owner];
+            return;
         }
 
-        $this->stackNearby($entity);
+        $event->cancel();
+
+        $player->sendMessage(
+            $this->plugin->getConfigManager()->getPrefix()
+            . "§cYou have too many items on the ground. Pick some up first."
+        );
     }
 
-    public function onEntityDespawn(EntityDespawnEvent $event): void
+    public function onItemSpawn(
+        ItemSpawnEvent $event
+    ): void {
+        $entity = $event->getEntity();
+
+        if (!$entity instanceof ItemEntity) {
+            return;
+        }
+
+        $owner = $entity->getThrower();
+
+        if ($owner === '') {
+            /*
+             * Bedrock drops do not always carry the thrower, so fall back to the
+             * short-lived window recorded when the drop was requested. Writing it
+             * back keeps the entity self-describing.
+             */
+            $owner = $this->findPendingOwner(
+                $entity
+            ) ?? '';
+        }
+
+        $owner = strtolower($owner);
+
+        if ($owner !== '') {
+            $entityId = spl_object_id($entity);
+
+            if (!isset($this->trackedItems[$entityId])) {
+                $this->trackedItems[$entityId] = [
+                    'owner' => $owner,
+                    'spawnTick' => $this->currentTick
+                ];
+
+                ++$this->dropCounts[$owner];
+            }
+        }
+
+        if ($this->isEnabled() && $this->getAutoStack()) {
+            $this->stackNearby($entity);
+        }
+    }
+
+    public function onEntityDespawn(
+        EntityDespawnEvent $event
+    ): void
     {
         $entity = $event->getEntity();
 
@@ -187,8 +302,7 @@ final class LagMaker implements Listener
         }
 
         $entityId = spl_object_id($entity);
-
-        $owner = $this->trackedItems[$entityId] ?? null;
+        $owner = $this->trackedItems[$entityId]['owner'] ?? null;
 
         if ($owner === null) {
             return;
@@ -198,10 +312,19 @@ final class LagMaker implements Listener
             $this->trackedItems[$entityId]
         );
 
-        $this->decreaseDropCount($owner);
+        --$this->dropCounts[$owner];
+
+        if (($this->dropCounts[$owner] ?? 0) <= 0) {
+            unset($this->dropCounts[$owner]);
+        }
     }
 
-    private function stackNearby(ItemEntity $source): void
+    /**
+     * Merges $source into the first compatible item entity next to it.
+     */
+    private function stackNearby(
+        ItemEntity $source
+    ): void
     {
         if (
             $source->isClosed()
@@ -216,43 +339,13 @@ final class LagMaker implements Listener
             return;
         }
 
-        $position = $source->getPosition();
-
-        $box = new AxisAlignedBB(
-            $position->x - self::STACK_RADIUS,
-            $position->y - self::STACK_RADIUS,
-            $position->z - self::STACK_RADIUS,
-            $position->x + self::STACK_RADIUS,
-            $position->y + self::STACK_RADIUS,
-            $position->z + self::STACK_RADIUS
-        );
-
         foreach (
-            $source->getWorld()->getNearbyEntities(
-                $box,
+            $this->nearbyItems(
+                $source->getWorld(),
+                $source->getPosition(),
                 $source
             ) as $nearby
         ) {
-            if (!$nearby instanceof ItemEntity) {
-                continue;
-            }
-
-            if (
-                $nearby->isClosed()
-                || $nearby->isFlaggedForDespawn()
-            ) {
-                continue;
-            }
-
-            $targetItem = $nearby->getItem();
-
-            if (
-                $targetItem->getName()
-                !== $sourceItem->getName()
-            ) {
-                continue;
-            }
-
             if (
                 !$source->isMergeable($nearby)
             ) {
@@ -265,59 +358,36 @@ final class LagMaker implements Listener
                 continue;
             }
 
-            break;
+            return;
         }
     }
 
+    /**
+     * Whether an item could merge into a neighbour at $position, used to decide
+     * if a drop over the limit should still be allowed.
+     */
     private function canStackNearby(
         World $world,
-        float $x,
-        float $y,
-        float $z,
+        Vector3 $position,
         Item $item
     ): bool {
-        $box = new AxisAlignedBB(
-            $x - self::STACK_RADIUS,
-            $y - self::STACK_RADIUS,
-            $z - self::STACK_RADIUS,
-            $x + self::STACK_RADIUS,
-            $y + self::STACK_RADIUS,
-            $z + self::STACK_RADIUS
-        );
-
         foreach (
-            $world->getNearbyEntities($box) as $entity
+            $this->nearbyItems(
+                $world,
+                $position
+            ) as $entity
         ) {
-            if (!$entity instanceof ItemEntity) {
-                continue;
-            }
+            $target = $entity->getItem();
 
             if (
-                $entity->isClosed()
-                || $entity->isFlaggedForDespawn()
-            ) {
-                continue;
-            }
-
-            $targetItem = $entity->getItem();
-
-            if (
-                $targetItem->getName()
-                !== $item->getName()
+                $target->getCount() + $item->getCount() >
+                $target->getMaxStackSize()
             ) {
                 continue;
             }
 
             if (
-                $targetItem->getCount()
-                + $item->getCount()
-                > $targetItem->getMaxStackSize()
-            ) {
-                continue;
-            }
-
-            if (
-                !$targetItem->canStackWith($item)
+                !$target->canStackWith($item)
             ) {
                 continue;
             }
@@ -328,32 +398,71 @@ final class LagMaker implements Listener
         return false;
     }
 
+    /**
+     * Live item entities inside the stack radius of $center, excluding $exclude.
+     *
+     * The list is not filtered by item type: for stacking, ItemEntity::isMergeable()
+     * already decides compatibility, and for the drop limit the caller compares
+     * with canStackWith(). Filtering here would only duplicate that work.
+     *
+     * @return list<ItemEntity>
+     */
+    private function nearbyItems(
+        World $world,
+        Vector3 $center,
+        ?ItemEntity $exclude = null
+    ): array {
+        $radius = $this->getStackRadius();
+
+        $box = new AxisAlignedBB(
+            $center->x - $radius,
+            $center->y - $radius,
+            $center->z - $radius,
+            $center->x + $radius,
+            $center->y + $radius,
+            $center->z + $radius
+        );
+
+        $result = [];
+
+        foreach (
+            $world->getNearbyEntities(
+                $box,
+                $exclude
+            ) as $entity
+        ) {
+            if (
+                $entity instanceof ItemEntity
+                && !$entity->isClosed()
+                && !$entity->isFlaggedForDespawn()
+            ) {
+                $result[] = $entity;
+            }
+        }
+
+        return $result;
+    }
+
+    /**
+     * Attributes a freshly spawned item to the player who dropped it.
+     */
     private function findPendingOwner(
         ItemEntity $entity
     ): ?string {
         $position = $entity->getPosition();
+        $world = $entity->getWorld();
+        $itemName = $entity->getItem()->getName();
 
         $bestKey = null;
-        $bestDistance = PHP_FLOAT_MAX;
+        $bestDistance = 9.0;
 
-        foreach ($this->pendingDrops as $key => $pending) {
+        foreach (
+            $this->pendingDrops as $key => $pending
+        ) {
             if (
-                $pending['world']
-                !== $entity->getWorld()
-            ) {
-                continue;
-            }
-
-            if (
-                $pending['itemName']
-                !== $entity->getItem()->getName()
-            ) {
-                continue;
-            }
-
-            if (
-                $pending['expiresAt']
-                < $this->currentTick
+                $pending['world'] !== $world
+                || $pending['itemName'] !== $itemName
+                || $pending['expiresAt'] < $this->currentTick
             ) {
                 continue;
             }
@@ -363,19 +472,17 @@ final class LagMaker implements Listener
             $dz = $position->z - $pending['z'];
 
             $distance = (
-                $dx * $dx
-                + $dy * $dy
-                + $dz * $dz
+                $dx * $dx + $dy * $dy + $dz * $dz
             );
 
-            if ($distance > 9.0) {
+            if (
+                $distance > $bestDistance
+            ) {
                 continue;
             }
 
-            if ($distance < $bestDistance) {
-                $bestDistance = $distance;
-                $bestKey = $key;
-            }
+            $bestDistance = $distance;
+            $bestKey = $key;
         }
 
         if ($bestKey === null) {
@@ -396,12 +503,12 @@ final class LagMaker implements Listener
     ): int {
         $count = 0;
 
-        foreach ($this->pendingDrops as $pending) {
+        foreach (
+            $this->pendingDrops as $pending
+        ) {
             if (
-                $pending['player']
-                === $playerName
-                && $pending['expiresAt']
-                >= $this->currentTick
+                $pending['player'] === $playerName
+                && $pending['expiresAt'] >= $this->currentTick
             ) {
                 ++$count;
             }
@@ -412,10 +519,11 @@ final class LagMaker implements Listener
 
     private function cleanupPendingDrops(): void
     {
-        foreach ($this->pendingDrops as $key => $pending) {
+        foreach (
+            $this->pendingDrops as $key => $pending
+        ) {
             if (
-                $pending['expiresAt']
-                < $this->currentTick
+                $pending['expiresAt'] < $this->currentTick
             ) {
                 unset(
                     $this->pendingDrops[$key]
@@ -424,92 +532,233 @@ final class LagMaker implements Listener
         }
     }
 
-    private function decreaseDropCount(
-        string $playerName
+    /**
+     * Records a drop that was allowed but has not appeared as an entity yet.
+     *
+     * The window is short: if no item shows up within it, the record is dropped
+     * so a cancelled or consumed drop cannot inflate anybody's counter.
+     */
+    private function trackPendingDrop(
+        Player $player,
+        Item $item
     ): void {
-        if (!isset($this->dropCounts[$playerName])) {
-            return;
-        }
+        $location = $player->getLocation();
 
-        --$this->dropCounts[$playerName];
-
-        if ($this->dropCounts[$playerName] <= 0) {
-            unset(
-                $this->dropCounts[$playerName]
-            );
-        }
+        $this->pendingDrops[] = [
+            'player' => strtolower(
+                $player->getName()
+            ),
+            'itemName' => $item->getName(),
+            'world' => $player->getWorld(),
+            'x' => $location->x,
+            'y' => $location->y,
+            'z' => $location->z,
+            'expiresAt' => $this->currentTick + self::PENDING_WINDOW
+        ];
     }
 
+    /**
+     * Starts a cleanup pass. Building the queue itself is spread over ticks, so
+     * even reading every world's entity list cannot spike a tick.
+     */
     private function startCleanup(): void
     {
-        if ($this->cleaning) {
+        $mode = $this->getMode();
+
+        if ($mode === self::MODE_OFF) {
             return;
         }
 
-        $this->queue = [];
+        $this->cleanupQueue = [];
+        $this->cleaning = true;
+
+        $worlds = [];
 
         foreach (
-            $this->plugin
-                ->getServer()
+            $this->plugin->getServer()
                 ->getWorldManager()
-                ->getWorlds()
-            as $world
+                ->getWorlds() as $world
         ) {
-            $this->collectItems($world);
+            $worlds[] = $world;
         }
 
-        if ($this->queue === []) {
-            return;
-        }
+        SpreadTask::spread(
+            $this->plugin,
+            $worlds,
+            1,
+            function(
+                mixed $world
+            ): void {
+                if (!$world instanceof World) {
+                    return;
+                }
 
-        $this->cleaning = true;
+                $this->queueWorld($world);
+            },
+            function(): void {
+                $this->cleaning = false;
+            }
+        );
     }
 
-    private function collectItems(
+    /**
+     * Collects the item entities of one world into the cleanup queue.
+     */
+    private function queueWorld(
         World $world
-    ): void {
-        foreach ($world->getEntities() as $entity) {
-            if (!$entity instanceof ItemEntity) {
+    ): void
+    {
+        foreach (
+            $world->getEntities() as $entity
+        ) {
+            if (
+                !$entity instanceof ItemEntity
+                || $entity->isClosed()
+                || $entity->isFlaggedForDespawn()
+            ) {
                 continue;
             }
 
-            if ($entity->isClosed()) {
+            if (
+                $this->getMode() === self::MODE_TTL
+                && !$this->isExpired($entity)
+            ) {
                 continue;
             }
 
-            if ($entity->isFlaggedForDespawn()) {
-                continue;
-            }
-
-            $this->queue[] = $entity;
+            $this->cleanupQueue[] = $entity;
         }
     }
 
-    private function processBatch(): void
-    {
-        $processed = 0;
+    /**
+     * Whether an item entity has been lying around longer than the configured
+     * TTL.
+     *
+     * ItemEntity has no public age getter, so this uses the tracked spawn tick
+     * when it is known and treats untracked items as fresh. That is the safe
+     * direction: an item is only removed once it is provably old.
+     */
+    private function isExpired(
+        ItemEntity $entity
+    ): bool {
+        $ttl = $this->getTtl();
 
-        while (
-            $this->queue !== []
-            && $processed < self::ITEMS_PER_TICK
+        if ($ttl <= 0) {
+            return true;
+        }
+
+        $tracked = $this->trackedItems[spl_object_id(
+            $entity
+        )] ?? null;
+
+        if ($tracked === null) {
+            return false;
+        }
+
+        return $this->currentTick - $tracked['spawnTick'] >= $ttl;
+    }
+
+    /**
+     * Despawns a bounded slice of the queue.
+     */
+    private function processCleanupBatch(): void
+    {
+        $perTick = $this->getCleanupPerTick();
+
+        for (
+            $i = 0;
+            $i < $perTick
+            && $this->cleanupQueue !== [];
+            ++$i
         ) {
             $entity = array_pop(
-                $this->queue
+                $this->cleanupQueue
             );
 
-            if ($entity === null) {
-                break;
+            if (
+                $entity === null
+                || $entity->isClosed()
+            ) {
+                continue;
             }
 
-            if (!$entity->isClosed()) {
-                $entity->flagForDespawn();
-            }
-
-            ++$processed;
+            $entity->flagForDespawn();
         }
 
-        if ($this->queue === []) {
+        if ($this->cleanupQueue === []) {
             $this->cleaning = false;
         }
+    }
+
+    private function getCleanupInterval(): int
+    {
+        return max(
+            20,
+            $this->plugin
+                ->getConfigManager()
+                ->getInt(
+                    'lagmaker.cleanup.interval',
+                    36000
+                )
+        );
+    }
+
+    private function getCleanupPerTick(): int
+    {
+        return max(
+            1,
+            $this->plugin
+                ->getConfigManager()
+                ->getInt(
+                    'lagmaker.cleanup.per-tick',
+                    200
+                )
+        );
+    }
+
+    private function getTtl(): int
+    {
+        return max(
+            0,
+            $this->plugin
+                ->getConfigManager()
+                ->getInt(
+                    'lagmaker.cleanup.ttl-seconds',
+                    900
+                ) * 20
+        );
+    }
+
+    private function getMaxDropsPerPlayer(): int
+    {
+        return max(
+            0,
+            $this->plugin
+                ->getConfigManager()
+                ->getInt(
+                    'lagmaker.max-drops-per-player',
+                    15
+                )
+        );
+    }
+
+    private function getAutoStack(): bool
+    {
+        return $this->plugin
+            ->getConfigManager()
+            ->getBool('lagmaker.auto-stack', true);
+    }
+
+    private function getStackRadius(): float
+    {
+        return max(
+            0.5,
+            $this->plugin
+                ->getConfigManager()
+                ->getFloat(
+                    'lagmaker.stack-radius',
+                    1.5
+                )
+        );
     }
 }

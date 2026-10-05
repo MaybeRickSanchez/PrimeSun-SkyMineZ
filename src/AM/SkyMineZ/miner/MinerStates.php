@@ -110,6 +110,9 @@ final class MinerStates
         return $this;
     }
 
+    /**
+     * @return array{mined: int, deaths: int, kills: int, killStreak: int}
+     */
     public function toArray(): array
     {
         return [
@@ -120,14 +123,33 @@ final class MinerStates
         ];
     }
 
+    /**
+     * @param array<string, mixed> $data
+     */
     public static function fromArray(
         array $data
     ): self {
         return new self(
-            (int) ($data['mined'] ?? 0),
-            (int) ($data['deaths'] ?? 0),
-            (int) ($data['kills'] ?? 0),
-            (int) ($data['killStreak'] ?? 0)
+            self::readInt($data, 'mined'),
+            self::readInt($data, 'deaths'),
+            self::readInt($data, 'kills'),
+            self::readInt($data, 'killStreak')
         );
+    }
+
+    /**
+     * Reads one counter out of a decoded JSON record. Anything that is not a
+     * number (a hand-edited file, a schema change) reads as zero rather than
+     * poisoning the stats with a cast of null.
+     *
+     * @param array<string, mixed> $data
+     */
+    private static function readInt(
+        array $data,
+        string $key
+    ): int {
+        $value = $data[$key] ?? 0;
+
+        return is_numeric($value) ? (int) $value : 0;
     }
 }

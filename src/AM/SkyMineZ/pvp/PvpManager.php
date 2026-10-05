@@ -4,8 +4,15 @@ declare(strict_types=1);
 
 namespace AM\SkyMineZ\pvp;
 
+use AM\SkyMineZ\event\PlayerPvPChangeEvent;
 use AM\SkyMineZ\Main;
 
+/**
+ * Per-player PvP preference, stored in plugin_data/pvp.json.
+ *
+ * Changing a preference raises {@link PlayerPvPChangeEvent} so a listener can
+ * veto it (region protection, minigames, arenas).
+ */
 final class PvpManager
 {
     private Main $main;
@@ -13,27 +20,43 @@ final class PvpManager
     /**
      * @var array<string, bool>
      */
-    private array $players = [];
+    private array $states = [];
 
-    public function __construct()
+    public function __construct(Main $main)
     {
-        $this->main = Main::getInstance();
+        $this->main = $main;
     }
 
-    public function loadPlayer(string $playerName): void
-    {
+    public function loadPlayer(
+        string $playerName
+    ): bool {
         $playerName = strtolower($playerName);
 
-        $this->players[$playerName] = (bool) $this->main
+        if (isset($this->states[$playerName])) {
+            return $this->states[$playerName];
+        }
+
+        $stored = $this->main
             ->getPvpDB()
-            ->get($playerName, true);
+            ->get($playerName, null);
+
+        $default = $this->main
+            ->getConfigManager()
+            ->getBool('pvp.default-enabled', true);
+
+        $state = is_bool($stored) ? $stored : $default;
+
+        $this->states[$playerName] = $state;
+
+        return $state;
     }
 
-    public function savePlayer(string $playerName): void
-    {
+    public function savePlayer(
+        string $playerName
+    ): void {
         $playerName = strtolower($playerName);
 
-        if (!isset($this->players[$playerName])) {
+        if (!isset($this->states[$playerName])) {
             return;
         }
 
@@ -41,51 +64,124 @@ final class PvpManager
             ->getPvpDB()
             ->set(
                 $playerName,
-                $this->players[$playerName]
+                $this->states[$playerName]
             );
-    }
-
-    public function setPlayer(
-        string $playerName,
-        bool $pvp = true
-    ): void {
-        $playerName = strtolower($playerName);
-
-        $this->players[$playerName] = $pvp;
-    }
-
-    public function getPlayerState(string $playerName): bool
-    {
-        $playerName = strtolower($playerName);
-
-        return $this->players[$playerName] ?? true;
-    }
-
-    public function isLoaded(string $playerName): bool
-    {
-        return isset(
-            $this->players[strtolower($playerName)]
-        );
-    }
-
-    public function unloadPlayer(string $playerName): void
-    {
-        unset(
-            $this->players[strtolower($playerName)]
-        );
     }
 
     public function saveAll(): void
     {
         $db = $this->main->getPvpDB();
 
-        foreach ($this->players as $playerName => $pvp) {
-            $db->set(
-                $playerName,
-                $pvp
-            );
+        foreach (
+            $this->states as $playerName => $state
+        ) {
+            $db->set($playerName, $state);
         }
 
         $db->save();
+    }
+
+    public function unloadPlayer(
+        string $playerName
+    ): void {
+        $this->savePlayer($playerName);
+
+        unset(
+            $this->states[strtolower($playerName)]
+        );
+    }
+
+    public function isLoaded(
+        string $playerName
+    ): bool {
+        return isset(
+            $this->states[strtolower($playerName)]
+        );
+    }
+
+    public function getState(
+        string $playerName
+    ): bool {
+        $playerName = strtolower($playerName);
+
+        if (isset($this->states[$playerName])) {
+            return $this->states[$playerName];
+        }
+
+        return $this->main
+            ->getConfigManager()
+            ->getBool('pvp.default-enabled', true);
+    }
+
+    /**
+     * @return bool the state after the change; unchanged when vetoed
+     */
+    public function setState(
+        string $playerName,
+        bool $state
+    ): bool {
+        $playerName = strtolower($playerName);
+
+        $previous = $this->getState($playerName);
+
+        if ($previous === $state) {
+            $this->states[$playerName] = $state;
+
+            return $state;
+        }
+
+        $player = $this->main->getServer()->getPlayerExact(
+            $playerName
+        );
+
+        if (
+            $player !== null
+            && PlayerPvPChangeEvent::hasHandlers()
+        ) {
+            $event = new PlayerPvPChangeEvent(
+                $player,
+                $previous,
+                $state
+            );
+
+            $event->call();
+
+            if ($event->isCancelled()) {
+                return $previous;
+            }
+        }
+
+        $this->states[$playerName] = $state;
+
+        return $state;
+    }
+
+    /**
+     * Flips the preference and returns the new value.
+     */
+    public function toggle(
+        string $playerName
+    ): bool {
+        return $this->setState(
+            $playerName,
+            !$this->getState($playerName)
+        );
+    }
+
+    /**
+     * PvP between two players is only allowed when both have it enabled.
+     */
+    public function canDamage(
+        string $attacker,
+        string $victim
+    ): bool {
+        if (
+            strcasecmp($attacker, $victim) === 0
+        ) {
+            return false;
+        }
+
+        return $this->getState($attacker)
+            && $this->getState($victim);
     }
 }

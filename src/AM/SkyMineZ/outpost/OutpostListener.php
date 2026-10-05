@@ -4,26 +4,26 @@ declare(strict_types=1);
 
 namespace AM\SkyMineZ\outpost;
 
+use AM\SkyMineZ\Main;
 use pocketmine\event\Listener;
-use pocketmine\event\player\PlayerJumpEvent;
-use pocketmine\event\player\PlayerQuitEvent;
+use pocketmine\event\player\PlayerJoinEvent;
 
-class OutpostListener implements Listener
+/**
+ * Outpost capture needs no jump event any more: the tick itself scans the box
+ * for occupants, so a player only has to stand still. This listener only pushes
+ * the holograms to joining players.
+ */
+final class OutpostListener implements Listener
 {
-    private OutpostManager $manager;
-
-    public function __construct(OutpostManager $manager)
-    {
-        $this->manager = $manager;
+    public function __construct(
+        private Main $main
+    ) {
     }
 
-    public function onJump(PlayerJumpEvent $event): void
+    public function onJoin(PlayerJoinEvent $event): void
     {
-        $this->manager->handleJump($event->getPlayer());
-    }
-
-    public function onQuit(PlayerQuitEvent $event): void
-    {
-        $this->manager->handleQuit($event->getPlayer());
+        $this->main->getOutpostManager()->spawnTo(
+            $event->getPlayer()
+        );
     }
 }

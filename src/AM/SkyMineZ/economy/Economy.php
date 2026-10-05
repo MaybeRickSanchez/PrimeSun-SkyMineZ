@@ -18,11 +18,47 @@ interface Economy
 
     public function get(string $playerName): int;
 
-    public function set(string $playerName, int $amount): void;
+    /**
+     * Overwrites a balance outright.
+     *
+     * @param string $reason forwarded to {@link EconomyChangeEvent}
+     */
+    public function set(
+        string $playerName,
+        int $amount,
+        string $reason = EconomyChangeEventReason::SET
+    ): void;
 
-    public function add(string $playerName, int $amount): void;
+    /**
+     * Credits a balance. Negative amounts are treated as a debit.
+     *
+     * @param string $reason forwarded to {@link EconomyChangeEvent}
+     *
+     * @return int the new balance
+     */
+    public function add(
+        string $playerName,
+        int $amount,
+        string $reason = EconomyChangeEventReason::CREDITS
+    ): int;
 
-    public function reduce(string $playerName, int $amount): void;
+    /**
+     * Debits a balance, never going below zero.
+     *
+     * @param string $reason forwarded to {@link EconomyChangeEvent}
+     *
+     * @return int the new balance
+     */
+    public function reduce(
+        string $playerName,
+        int $amount,
+        string $reason = EconomyChangeEventReason::DEBITS
+    ): int;
 
     public function has(string $playerName, int $amount): bool;
+
+    /**
+     * Stable identifier used for messages and events, e.g. "money" or "gold".
+     */
+    public function getType(): string;
 }

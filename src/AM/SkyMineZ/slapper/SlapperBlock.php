@@ -135,6 +135,16 @@ final class SlapperBlock
         return $this;
     }
 
+    /**
+     * @return array{
+     *     world: string,
+     *     x: float,
+     *     y: float,
+     *     z: float,
+     *     slapper: string,
+     *     block: string
+     * }
+     */
     public function toArray(): array
     {
         $stateData =
@@ -163,15 +173,21 @@ final class SlapperBlock
         ];
     }
 
+    /**
+     * @param array<string, mixed> $data
+     */
     public static function blockFromArray(
         array $data
     ): ?Block {
-        if (!isset($data['block'])) {
+        if (
+            !isset($data['block'])
+            || !is_string($data['block'])
+        ) {
             return null;
         }
 
         $binary = base64_decode(
-            (string) $data['block'],
+            $data['block'],
             true
         );
 

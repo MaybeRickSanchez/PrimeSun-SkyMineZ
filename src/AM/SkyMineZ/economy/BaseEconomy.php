@@ -4,20 +4,49 @@ declare(strict_types=1);
 
 namespace AM\SkyMineZ\economy;
 
+use AM\SkyMineZ\event\EconomyChangeEvent;
 use pocketmine\utils\Config;
 
+/**
+ * JSON-file backed currency.
+ *
+ * Balances are kept in memory for online players only; everything else is read
+ * from and written to the underlying file. Balances never go below zero, and
+ * every mutation raises {@link EconomyChangeEvent} so other plugins can observe
+ * or veto it.
+ */
 abstract class BaseEconomy implements Economy
 {
-    protected int $defaultBalance = 0;
-
-    /**
-     * @var array<string, int>
-     */
+    /** @var array<string, int> */
     protected array $balances = [];
 
     public function __construct(
-        protected Config $database
+        protected Config $database,
+        private int $defaultBalance = 0
     ) {
+    }
+
+    public function getType(): string
+    {
+        return $this->type;
+    }
+
+    /**
+     * @var string
+     */
+    protected string $type = 'balance';
+
+    public function getDefaultBalance(): int
+    {
+        return $this->defaultBalance;
+    }
+
+    public function setDefaultBalance(int $defaultBalance): void
+    {
+        $this->defaultBalance = max(
+            0,
+            $defaultBalance
+        );
     }
 
     public function loadPlayer(string $playerName): void
@@ -28,10 +57,14 @@ abstract class BaseEconomy implements Economy
             return;
         }
 
-        $this->balances[$playerName] = (int) $this->database->get(
+        $stored = $this->database->get(
             $playerName,
-            $this->defaultBalance
+            null
         );
+
+        $this->balances[$playerName] = is_numeric($stored)
+            ? max(0, (int) $stored)
+            : $this->defaultBalance;
     }
 
     public function savePlayer(string $playerName): void
@@ -64,10 +97,12 @@ abstract class BaseEconomy implements Economy
     public function saveAll(): void
     {
         foreach (
-            array_keys($this->balances)
-            as $playerName
+            $this->balances as $playerName => $balance
         ) {
-            $this->savePlayer($playerName);
+            $this->database->set(
+                $playerName,
+                $balance
+            );
         }
 
         $this->database->save();
@@ -86,64 +121,122 @@ abstract class BaseEconomy implements Economy
     {
         return $this->balances[
             $this->normalizeName($playerName)
-            ] ?? 0;
+        ] ?? 0;
     }
 
     public function set(
         string $playerName,
-        int $amount
+        int $amount,
+        string $reason = EconomyChangeEventReason::SET
     ): void {
         $playerName = $this->normalizeName($playerName);
 
-        $this->balances[$playerName] = max(
-            0,
-            $amount
-        );
+        $newBalance = max(0, $amount);
+
+        if (!$this->applyChange(
+            $playerName,
+            $newBalance,
+            $reason
+        )) {
+            return;
+        }
+
+        $this->balances[$playerName] = $newBalance;
     }
 
     public function add(
         string $playerName,
-        int $amount
-    ): void {
-        if ($amount <= 0) {
-            return;
-        }
-
+        int $amount,
+        string $reason = EconomyChangeEventReason::CREDITS
+    ): int {
         $playerName = $this->normalizeName($playerName);
 
-        $this->balances[$playerName] =
-            ($this->balances[$playerName] ?? 0)
-            + $amount;
+        $newBalance = max(
+            0,
+            ($this->balances[$playerName] ?? 0) + $amount
+        );
+
+        if (!$this->applyChange(
+            $playerName,
+            $newBalance,
+            $amount < 0 ? EconomyChangeEventReason::DEBITS : $reason
+        )) {
+            return $this->get($playerName);
+        }
+
+        $this->balances[$playerName] = $newBalance;
+
+        return $newBalance;
     }
 
     public function reduce(
         string $playerName,
-        int $amount
-    ): void {
+        int $amount,
+        string $reason = EconomyChangeEventReason::DEBITS
+    ): int {
         if ($amount <= 0) {
-            return;
+            return $this->get($playerName);
         }
 
-        $playerName = $this->normalizeName($playerName);
-
-        $current =
-            $this->balances[$playerName] ?? 0;
-
-        $this->balances[$playerName] = max(
-            0,
-            $current - $amount
+        return $this->add(
+            $playerName,
+            -$amount,
+            $reason
         );
     }
 
-    public function has(
-        string $playerName,
-        int $amount
-    ): bool {
+    public function has(string $playerName, int $amount): bool
+    {
         if ($amount < 0) {
             return false;
         }
 
         return $this->get($playerName) >= $amount;
+    }
+
+    public function reset(string $playerName): void
+    {
+        $this->set(
+            $playerName,
+            0,
+            EconomyChangeEventReason::RESET
+        );
+    }
+
+    /**
+     * Every stored balance, including players who are currently offline. Used
+     * by the leaderboards, which therefore read the whole file.
+     *
+     * @return array<string, int>
+     */
+    public function getSnapshot(): array
+    {
+        $result = [];
+
+        foreach (
+            $this->database->getAll() as $playerName => $amount
+        ) {
+            if (!is_numeric($amount)) {
+                continue;
+            }
+
+            $result[
+                $this->normalizeName((string) $playerName)
+            ] = (int) $amount;
+        }
+
+        foreach (
+            $this->balances as $playerName => $balance
+        ) {
+            $result[$playerName] = $balance;
+        }
+
+        return $result;
+    }
+
+    public function getDatabase(): Config
+    {
+        return $this->database;
     }
 
     protected function normalizeName(
@@ -153,27 +246,34 @@ abstract class BaseEconomy implements Economy
     }
 
     /**
-     * @return array<string, int>
+     * Raises {@link EconomyChangeEvent} and reports whether the change may go
+     * through.
      */
-    public function getSnapshot(): array
-    {
-        $result = [];
+    private function applyChange(
+        string $playerName,
+        int $newBalance,
+        string $reason
+    ): bool {
+        $oldBalance = $this->get($playerName);
 
-        foreach ($this->database->getAll() as $playerName => $amount) {
-            if (is_numeric($amount)) {
-                $result[(string) $playerName] = (int) $amount;
-            }
+        if ($oldBalance === $newBalance) {
+            return true;
         }
 
-        foreach ($this->balances as $playerName => $amount) {
-            $result[$playerName] = $amount;
+        if (!EconomyChangeEvent::hasHandlers()) {
+            return true;
         }
 
-        return $result;
-    }
+        $event = new EconomyChangeEvent(
+            $this,
+            $playerName,
+            $oldBalance,
+            $newBalance,
+            $reason
+        );
 
-    public function getDatabase(): Config
-    {
-        return $this->database;
+        $event->call();
+
+        return !$event->isCancelled();
     }
 }

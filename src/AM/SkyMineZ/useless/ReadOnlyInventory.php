@@ -10,7 +10,9 @@ use pocketmine\event\inventory\InventoryTransactionEvent;
 use pocketmine\inventory\Inventory;
 use pocketmine\inventory\transaction\action\SlotChangeAction;
 use pocketmine\player\Player;
-use pocketmine\plugin\Plugin;
+use pocketmine\event\player\PlayerQuitEvent;
+use pocketmine\plugin\PluginBase;
+use pocketmine\Server;
 
 final class ReadOnlyInventory
 {
@@ -19,9 +21,11 @@ final class ReadOnlyInventory
      */
     private array $inventories = [];
 
-    public function __construct(Plugin $plugin)
-    {
-        $pluginManager = $plugin->getServer()->getPluginManager();
+    public function __construct(
+        private Server $server,
+        PluginBase $plugin
+    ) {
+        $pluginManager = $server->getPluginManager();
 
         $pluginManager->registerEvent(
             InventoryTransactionEvent::class,
@@ -54,6 +58,24 @@ final class ReadOnlyInventory
                 $this->remove(
                     $event->getInventory()
                 );
+            },
+            EventPriority::MONITOR,
+            $plugin
+        );
+
+        /*
+         * A forced disconnect never raises InventoryCloseEvent, so the tracked
+         * inventories would stay locked forever. Release whatever the quitting
+         * player still had open.
+         */
+        $pluginManager->registerEvent(
+            PlayerQuitEvent::class,
+            function (PlayerQuitEvent $event): void {
+                $current = $event->getPlayer()->getCurrentWindow();
+
+                if ($current !== null) {
+                    $this->remove($current);
+                }
             },
             EventPriority::MONITOR,
             $plugin
