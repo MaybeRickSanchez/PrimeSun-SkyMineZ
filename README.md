@@ -25,20 +25,24 @@
   <text x="162" y="108" font-family="Verdana, sans-serif" font-size="15" fill="#a5b4fc">mines &#183; crates &#183; outposts &#183; zero-lag refills</text>
 </svg>
 
-<svg width="560" height="28" viewBox="0 0 560 28" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="build badges">
+<svg width="720" height="28" viewBox="0 0 720 28" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="build badges">
   <g font-family="Verdana, sans-serif" font-size="11">
-    <rect x="0" y="0" width="150" height="24" rx="4" fill="#1b2a5e"/>
-    <rect x="0" y="0" width="52" height="24" rx="4" fill="#0b1026"/>
-    <text x="8" y="16" fill="#a5b4fc">pmmp</text>
-    <text x="60" y="16" fill="#e9d5ff">5.44 &#183; PHP 8.1+</text>
-    <rect x="160" y="0" width="150" height="24" rx="4" fill="#1b2a5e"/>
-    <rect x="160" y="0" width="62" height="24" rx="4" fill="#0b1026"/>
-    <text x="168" y="16" fill="#a5b4fc">phpstan</text>
-    <text x="230" y="16" fill="#7CFC00">level 9 clean</text>
-    <rect x="320" y="0" width="230" height="24" rx="4" fill="#1b2a5e"/>
-    <rect x="320" y="0" width="70" height="24" rx="4" fill="#0b1026"/>
-    <text x="328" y="16" fill="#a5b4fc">server-tested</text>
-    <text x="398" y="16" fill="#e9d5ff">boots &#183; commands pass</text>
+    <rect x="0" y="0" width="46" height="24" rx="4" fill="#7c3aed"/>
+    <text x="7" y="16" fill="#ffffff">status</text>
+    <rect x="46" y="0" width="114" height="24" rx="4" fill="#1b2a5e"/>
+    <text x="54" y="16" fill="#f0abfc">developing</text>
+    <rect x="170" y="0" width="150" height="24" rx="4" fill="#1b2a5e"/>
+    <rect x="170" y="0" width="52" height="24" rx="4" fill="#0b1026"/>
+    <text x="178" y="16" fill="#a5b4fc">pmmp</text>
+    <text x="230" y="16" fill="#e9d5ff">5.44 &#183; PHP 8.1+</text>
+    <rect x="330" y="0" width="150" height="24" rx="4" fill="#1b2a5e"/>
+    <rect x="330" y="0" width="62" height="24" rx="4" fill="#0b1026"/>
+    <text x="338" y="16" fill="#a5b4fc">phpstan</text>
+    <text x="400" y="16" fill="#7CFC00">level 9 clean</text>
+    <rect x="490" y="0" width="230" height="24" rx="4" fill="#1b2a5e"/>
+    <rect x="490" y="0" width="70" height="24" rx="4" fill="#0b1026"/>
+    <text x="498" y="16" fill="#a5b4fc">server-tested</text>
+    <text x="568" y="16" fill="#e9d5ff">boots &#183; commands pass</text>
   </g>
 </svg>
 
@@ -51,6 +55,13 @@ budget**: mine refills are spread across ticks, player scans are batched, and
 lookups that run on every interaction are O(1) indexes instead of linear scans.
 
 Inspired by the SkyMine mode of `play.bitonetop.com`.
+
+## Project status: developing
+
+This plugin is under active development. The core is implemented, statically
+clean (PHPStan level 9) and boots on a live 5.44 server, but in-game testing on
+a real Bedrock client is still in progress. Expect behavior changes and bug
+fixes; check the commit history before updating a production server.
 
 ---
 
@@ -197,3 +208,11 @@ Data files (`plugin_data/SkyMineZ/*.json`) are plain JSON and safe to inspect;
 - **Verified on a live server** — the plugin boots on 5.44.2+dev and every
   console-safe command path was executed against a real server during
   development.
+
+---
+
+## License
+
+MIT — see [LICENSE](LICENSE). You are free to use, modify and redistribute this
+plugin, including on commercial servers, as long as the copyright notice stays
+intact.
