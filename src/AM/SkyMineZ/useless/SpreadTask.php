@@ -116,45 +116,6 @@ final class SpreadTask extends Task
             );
     }
 
-    /**
-     * Splits $list into batches of at most $batchSize entries, for callers that
-     * want the whole list but cannot afford one giant loop.
-     *
-     * @param iterable<mixed> $list
-     *
-     * @return list<list<mixed>>
-     *
-     * @throws \InvalidArgumentException when $batchSize is below 1
-     */
-    public static function batch(
-        iterable $list,
-        int $batchSize
-    ): array {
-        if ($batchSize < 1) {
-            throw new \InvalidArgumentException(
-                'batchSize must be greater than 0.'
-            );
-        }
-
-        $batches = [];
-        $current = [];
-
-        foreach (self::flatten($list) as $entry) {
-            $current[] = $entry;
-
-            if (count($current) >= $batchSize) {
-                $batches[] = $current;
-                $current = [];
-            }
-        }
-
-        if ($current !== []) {
-            $batches[] = $current;
-        }
-
-        return $batches;
-    }
-
     public function onRun(): void
     {
         if ($this->finished) {

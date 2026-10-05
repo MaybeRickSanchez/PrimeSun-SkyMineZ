@@ -63,11 +63,6 @@ final class Mine
         }
     }
 
-    public function getMain(): Main
-    {
-        return $this->main;
-    }
-
     public function getName(): string
     {
         return $this->info->getMineName();
@@ -118,19 +113,6 @@ final class Mine
         MineBlock $block
     ): self {
         $this->mineBlocks[] = $block;
-
-        return $this;
-    }
-
-    /**
-     * @param list<MineBlock> $blocks
-     */
-    public function setBlocks(
-        array $blocks
-    ): self {
-        $this->mineBlocks = array_values(
-            $blocks
-        );
 
         return $this;
     }
@@ -237,7 +219,6 @@ final class Mine
             1
         );
 
-        $this->info->setLastReason($reason);
         $this->info->setFilling(true);
 
         if ($this->resetInterval > 0) {
@@ -263,22 +244,6 @@ final class Mine
     {
         return $this->fillTask !== null
             && !$this->fillTask->isCancelled();
-    }
-
-    /**
-     * 0.0 to 1.0 while a refill is running, 1.0 otherwise.
-     */
-    public function getFillProgress(): float
-    {
-        $handler = $this->fillTask;
-
-        if ($handler === null) {
-            return 1.0;
-        }
-
-        $task = $handler->getTask();
-
-        return $task->getProgress();
     }
 
     public function cancelFill(): void

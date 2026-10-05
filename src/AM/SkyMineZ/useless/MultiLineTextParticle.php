@@ -103,40 +103,6 @@ final class MultiLineTextParticle
     }
 
     /**
-     * Appends a line and returns its index.
-     */
-    public function addLine(
-        string $text
-    ): int {
-        $id = count($this->texts);
-
-        $this->texts[] = $text;
-
-        if ($this->spawned) {
-            $this->rebuild();
-        }
-
-        return $id;
-    }
-
-    public function removeLine(
-        int $id
-    ): void
-    {
-        if (!isset($this->texts[$id])) {
-            return;
-        }
-
-        unset($this->texts[$id]);
-
-        $this->repack();
-
-        if ($this->spawned) {
-            $this->rebuild();
-        }
-    }
-
-    /**
      * Replaces every line at once. Does nothing when the result is identical,
      * which keeps the 10-minute leaderboard refresh from flickering.
      *
@@ -262,7 +228,7 @@ final class MultiLineTextParticle
     }
 
     /**
-     * Closes gaps left by setLine()/removeLine() so line indexes stay
+     * Closes gaps left by out-of-range setLine() calls so line indexes stay
      * consecutive.
      */
     private function repack(): void
@@ -287,7 +253,6 @@ final class MultiLineTextParticle
         ) {
             $line->deSpawn();
         }
-
 
         $this->lines = [];
 

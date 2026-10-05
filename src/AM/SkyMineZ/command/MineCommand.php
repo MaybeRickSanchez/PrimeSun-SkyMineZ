@@ -239,16 +239,9 @@ final class MineCommand extends BaseCommand
         CommandSender $sender,
         array $args
     ): bool {
-        $mine = $this->plugin->getMineManager()->get(
-            $args[1] ?? ''
-        );
+        $mine = $this->resolveMine($sender, $args[1] ?? null);
 
         if ($mine === null) {
-            $this->error(
-                $sender,
-                'No mine with that name.'
-            );
-
             return true;
         }
 
@@ -403,16 +396,9 @@ final class MineCommand extends BaseCommand
                 Player $player,
                 array $args
             ): void {
-                $mine = $this->plugin->getMineManager()->get(
-                    $args[1] ?? ''
-                );
+                $mine = $this->resolveMine($player, $args[1] ?? null);
 
                 if ($mine === null) {
-                    $this->error(
-                        $player,
-                        'No mine with that name.'
-                    );
-
                     return;
                 }
 
@@ -469,14 +455,9 @@ final class MineCommand extends BaseCommand
             return true;
         }
 
-        $mine = $manager->get($name);
+        $mine = $this->resolveMine($sender, $name);
 
         if ($mine === null) {
-            $this->error(
-                $sender,
-                "No mine named '{$name}'."
-            );
-
             return true;
         }
 
@@ -507,16 +488,9 @@ final class MineCommand extends BaseCommand
         CommandSender $sender,
         array $args
     ): bool {
-        $mine = $this->plugin->getMineManager()->get(
-            $args[1] ?? ''
-        );
+        $mine = $this->resolveMine($sender, $args[1] ?? null);
 
         if ($mine === null) {
-            $this->error(
-                $sender,
-                'No mine with that name.'
-            );
-
             return true;
         }
 
@@ -752,13 +726,27 @@ final class MineCommand extends BaseCommand
             . $position->getFloorZ() . ')';
     }
 
-    private static function isValidName(
-        string $name
-    ): bool {
-        return preg_match(
-            '/^[A-Za-z0-9_-]{1,32}$/',
-            $name
-        ) === 1;
+    /**
+     * Looks a mine up by name, reporting the miss to the sender.
+     */
+    private function resolveMine(
+        CommandSender $sender,
+        ?string $name
+    ): ?Mine {
+        $mine = $name !== null && $name !== ''
+            ? $this->plugin->getMineManager()->get($name)
+            : null;
+
+        if ($mine === null) {
+            $this->error(
+                $sender,
+                "No mine named '" . ($name ?? '') . "'."
+            );
+
+            return null;
+        }
+
+        return $mine;
     }
 
     private function handleHelp(

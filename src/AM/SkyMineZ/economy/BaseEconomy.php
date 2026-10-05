@@ -234,11 +234,6 @@ abstract class BaseEconomy implements Economy
         return $result;
     }
 
-    public function getDatabase(): Config
-    {
-        return $this->database;
-    }
-
     protected function normalizeName(
         string $playerName
     ): string {

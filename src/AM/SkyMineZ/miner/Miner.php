@@ -22,14 +22,6 @@ final class Miner
         return $this->states;
     }
 
-    public function setStates(
-        MinerStates $states
-    ): self {
-        $this->states = $states;
-
-        return $this;
-    }
-
     public function getMined(): int
     {
         return $this->states->getMined();

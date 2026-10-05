@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace AM\SkyMineZ\crate;
 
 use AM\SkyMineZ\Main;
+use AM\SkyMineZ\useless\Arrays;
 use AM\SkyMineZ\useless\ReadOnlyInventory;
 use AM\SkyMineZ\useless\SpreadTask;
+use AM\SkyMineZ\useless\Worlds;
 use pocketmine\block\VanillaBlocks;
 use pocketmine\math\Vector3;
 use pocketmine\player\Player;
@@ -14,7 +16,6 @@ use pocketmine\world\Position;
 use pocketmine\world\World;
 use pocketmine\world\WorldManager;
 use RuntimeException;
-use Throwable;
 
 /**
  * Owns every crate on the server.
@@ -68,7 +69,7 @@ final class CrateManager
             if (
                 !is_string($crateName)
                 || !is_array($crateData)
-                || !self::isStringMap($crateData)
+                || !Arrays::isStringMap($crateData)
             ) {
                 continue;
             }
@@ -236,14 +237,6 @@ final class CrateManager
         return $this->crates;
     }
 
-    /**
-     * @return list<string>
-     */
-    public function getNames(): array
-    {
-        return array_keys($this->crates);
-    }
-
     public function count(): int
     {
         return count($this->crates);
@@ -298,25 +291,6 @@ final class CrateManager
     }
 
     /**
-     * @param array<mixed> $array
-     *
-     * @phpstan-assert-if-true array<string, mixed> $array
-     */
-    private static function isStringMap(
-        array $array
-    ): bool {
-        foreach (
-            array_keys($array) as $key
-        ) {
-            if (!is_string($key)) {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    /**
      * @param array<string, mixed> $data
      */
     private function createFromArray(
@@ -339,9 +313,9 @@ final class CrateManager
             return null;
         }
 
-        $world = $this->resolveWorldOrNull(
-            $data['world'],
-            $worldManager
+        $world = Worlds::resolve(
+            $worldManager,
+            $data['world']
         );
 
         if ($world === null) {
@@ -375,7 +349,7 @@ final class CrateManager
         ) {
             if (
                 !is_array($rewardData)
-                || !self::isStringMap($rewardData)
+                || !Arrays::isStringMap($rewardData)
             ) {
                 continue;
             }
@@ -390,20 +364,6 @@ final class CrateManager
         return $crate;
     }
 
-    private function resolveWorldOrNull(
-        string $name,
-        WorldManager $worldManager
-    ): ?World {
-        try {
-            return $this->resolveWorld(
-                $name,
-                $worldManager
-            );
-        } catch (Throwable) {
-            return null;
-        }
-    }
-
     private function resolveWorld(
         string|World $world,
         WorldManager $worldManager
@@ -412,13 +372,10 @@ final class CrateManager
             return $world;
         }
 
-        $resolved = $worldManager->getWorldByName($world);
-
-        if ($resolved === null && $worldManager->isWorldGenerated($world)) {
-            $worldManager->loadWorld($world);
-
-            $resolved = $worldManager->getWorldByName($world);
-        }
+        $resolved = Worlds::resolve(
+            $worldManager,
+            $world
+        );
 
         if ($resolved === null) {
             throw new RuntimeException(

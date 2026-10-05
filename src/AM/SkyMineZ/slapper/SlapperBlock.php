@@ -127,14 +127,6 @@ final class SlapperBlock
         return $this->slapperName;
     }
 
-    public function setSlapperName(
-        string $slapperName
-    ): self {
-        $this->slapperName = $slapperName;
-
-        return $this;
-    }
-
     /**
      * @return array{
      *     world: string,

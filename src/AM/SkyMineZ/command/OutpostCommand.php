@@ -201,16 +201,9 @@ final class OutpostCommand extends BaseCommand
         CommandSender $sender,
         array $args
     ): bool {
-        $outpost = $this->plugin->getOutpostManager()->get(
-            $args[1] ?? ''
-        );
+        $outpost = $this->resolveOutpost($sender, $args[1] ?? null);
 
         if ($outpost === null) {
-            $this->error(
-                $sender,
-                'No outpost with that name.'
-            );
-
             return true;
         }
 
@@ -276,16 +269,9 @@ final class OutpostCommand extends BaseCommand
         CommandSender $sender,
         array $args
     ): bool {
-        $outpost = $this->plugin->getOutpostManager()->get(
-            $args[1] ?? ''
-        );
+        $outpost = $this->resolveOutpost($sender, $args[1] ?? null);
 
         if ($outpost === null) {
-            $this->error(
-                $sender,
-                'No outpost with that name.'
-            );
-
             return true;
         }
 
@@ -330,16 +316,9 @@ final class OutpostCommand extends BaseCommand
         CommandSender $sender,
         array $args
     ): bool {
-        $outpost = $this->plugin->getOutpostManager()->get(
-            $args[1] ?? ''
-        );
+        $outpost = $this->resolveOutpost($sender, $args[1] ?? null);
 
         if ($outpost === null) {
-            $this->error(
-                $sender,
-                'No outpost with that name.'
-            );
-
             return true;
         }
 
@@ -363,13 +342,27 @@ final class OutpostCommand extends BaseCommand
         return true;
     }
 
-    private static function isValidName(
-        string $name
-    ): bool {
-        return preg_match(
-            '/^[A-Za-z0-9_-]{1,32}$/',
-            $name
-        ) === 1;
+    /**
+     * Looks an outpost up by name, reporting the miss to the sender.
+     */
+    private function resolveOutpost(
+        CommandSender $sender,
+        ?string $name
+    ): ?Outpost {
+        $outpost = $name !== null && $name !== ''
+            ? $this->plugin->getOutpostManager()->get($name)
+            : null;
+
+        if ($outpost === null) {
+            $this->error(
+                $sender,
+                "No outpost named '" . ($name ?? '') . "'."
+            );
+
+            return null;
+        }
+
+        return $outpost;
     }
 
     private function handleHelp(

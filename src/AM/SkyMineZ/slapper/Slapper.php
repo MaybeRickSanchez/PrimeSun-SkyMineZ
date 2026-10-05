@@ -84,11 +84,6 @@ final class Slapper
         return $this->entity;
     }
 
-    public function getEntityId(): ?int
-    {
-        return $this->entity?->getId();
-    }
-
     public function getName(): string
     {
         return $this->name;
@@ -195,6 +190,70 @@ final class Slapper
         $this->messages = [];
 
         return $this;
+    }
+
+    /**
+     * Removes one entry by its list index, repacking the list so the remaining
+     * indexes stay consecutive.
+     *
+     * @return bool false when the index does not exist
+     */
+    public function removeCommand(
+        int $index
+    ): bool {
+        if (!isset($this->commands[$index])) {
+            return false;
+        }
+
+        /*
+         * Rebuilt explicitly instead of unset()+array_values() so the list
+         * stays a dense list<string> without gaps.
+         */
+        $remaining = [];
+
+        foreach (
+            $this->commands as $position => $command
+        ) {
+            if ($position !== $index) {
+                $remaining[] = $command;
+            }
+        }
+
+        $this->commands = $remaining;
+
+        return true;
+    }
+
+    /**
+     * Removes one entry by its list index, repacking the list so the remaining
+     * indexes stay consecutive.
+     *
+     * @return bool false when the index does not exist
+     */
+    public function removeMessage(
+        int $index
+    ): bool {
+        if (!isset($this->messages[$index])) {
+            return false;
+        }
+
+        /*
+         * Rebuilt explicitly instead of unset()+array_values() so the list
+         * stays a dense list<string> without gaps.
+         */
+        $remaining = [];
+
+        foreach (
+            $this->messages as $position => $message
+        ) {
+            if ($position !== $index) {
+                $remaining[] = $message;
+            }
+        }
+
+        $this->messages = $remaining;
+
+        return true;
     }
 
     /**

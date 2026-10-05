@@ -17,8 +17,7 @@ use pocketmine\scheduler\Task;
 final class OutpostTask extends Task
 {
     public function __construct(
-        private OutpostManager $manager,
-        private int $interval = 20
+        private OutpostManager $manager
     ) {
     }
 
@@ -27,8 +26,4 @@ final class OutpostTask extends Task
         $this->manager->tickAll();
     }
 
-    public function getInterval(): int
-    {
-        return $this->interval;
-    }
 }

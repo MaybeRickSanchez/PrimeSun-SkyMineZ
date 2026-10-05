@@ -28,8 +28,7 @@ use pocketmine\scheduler\TaskHandler;
  * Performance notes, because this runs on every player:
  *
  *  - A pass over the online players is spread across several ticks with
- *    {@link SpreadTask}. It is a one-shot task scheduled with
- *    scheduleDelayedTask; scheduling it as repeating would leak a task per tick.
+ *    {@link SpreadTask}, which self-cancels once every entry was visited.
  *  - Only lines that actually changed are re-sent. An unchanged board costs one
  *    string comparison per line and zero packets.
  */

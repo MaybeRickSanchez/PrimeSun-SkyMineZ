@@ -231,11 +231,7 @@ final class MainMenuForm
                 }
 
                 try {
-                    $this->plugin->getCrateManager()->saveAll();
-                    $this->plugin->getSlapperManager()->saveAll();
-                    $this->plugin->getLeaderboardManager()->saveAll();
-                    $this->plugin->getMineManager()->saveAll();
-                    $this->plugin->getOutpostManager()->saveAll();
+                    $this->plugin->saveAllData();
                 } catch (\Throwable $exception) {
                     $player->sendMessage(
                         $this->prefix() . '§cSave failed: '

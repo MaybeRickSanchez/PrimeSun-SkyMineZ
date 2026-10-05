@@ -19,13 +19,6 @@ final class MinerStates
         return $this->mined;
     }
 
-    public function setMined(int $mined): self
-    {
-        $this->mined = max(0, $mined);
-
-        return $this;
-    }
-
     public function addMined(int $amount = 1): self
     {
         if ($amount > 0) {
@@ -38,13 +31,6 @@ final class MinerStates
     public function getDeaths(): int
     {
         return $this->deaths;
-    }
-
-    public function setDeaths(int $deaths): self
-    {
-        $this->deaths = max(0, $deaths);
-
-        return $this;
     }
 
     public function addDeath(int $amount = 1): self
@@ -61,13 +47,6 @@ final class MinerStates
         return $this->kills;
     }
 
-    public function setKills(int $kills): self
-    {
-        $this->kills = max(0, $kills);
-
-        return $this;
-    }
-
     public function addKill(int $amount = 1): self
     {
         if ($amount > 0) {
@@ -80,17 +59,6 @@ final class MinerStates
     public function getKillStreak(): int
     {
         return $this->killStreak;
-    }
-
-    public function setKillStreak(
-        int $killStreak
-    ): self {
-        $this->killStreak = max(
-            0,
-            $killStreak
-        );
-
-        return $this;
     }
 
     public function addKillStreak(

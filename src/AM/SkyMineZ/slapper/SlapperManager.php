@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace AM\SkyMineZ\slapper;
 
 use AM\SkyMineZ\Main;
+use AM\SkyMineZ\useless\Arrays;
 use AM\SkyMineZ\useless\SpreadTask;
+use AM\SkyMineZ\useless\Worlds;
 use pocketmine\block\Block;
 use pocketmine\entity\Entity;
 use pocketmine\entity\Location;
@@ -71,7 +73,7 @@ final class SlapperManager
 if (
                 !is_string($name)
                 || !is_array($data)
-                || !self::isStringMap($data)
+                || !Arrays::isStringMap($data)
             ) {
                 continue;
             }
@@ -97,7 +99,7 @@ if (
                 if (
                     !is_string($blockName)
                     || !is_array($blockData)
-                    || !self::isStringMap($blockData)
+                    || !Arrays::isStringMap($blockData)
                 ) {
                     continue;
                 }
@@ -333,29 +335,15 @@ if (
             return false;
         }
 
-        $oldEntity =
-            $slapper->getEntity();
-
-        if ($oldEntity !== null) {
-            unset(
-                $this->entities[
-                $oldEntity->getId()
-                ]
-            );
-        }
+        $this->forgetEntity($slapper);
 
         $slapper->spawn();
 
-        $entity =
-            $slapper->getEntity();
-
-        if ($entity === null) {
+        if ($slapper->getEntity() === null) {
             return false;
         }
 
-        $this->entities[
-        $entity->getId()
-        ] = $slapper;
+        $this->trackEntity($slapper);
 
         return true;
     }
@@ -370,20 +358,40 @@ if (
             return false;
         }
 
-        $entity =
-            $slapper->getEntity();
-
-        if ($entity !== null) {
-            unset(
-                $this->entities[
-                $entity->getId()
-                ]
-            );
-        }
+        $this->forgetEntity($slapper);
 
         $slapper->despawn();
 
         return true;
+    }
+
+    /**
+     * Drops a slapper's live entity from the id index. The same few lines
+     * appeared in spawn(), despawn(), move() and removeSlapper().
+     */
+    private function forgetEntity(
+        Slapper $slapper
+    ): void {
+        $entity = $slapper->getEntity();
+
+        if ($entity !== null) {
+            unset(
+                $this->entities[$entity->getId()]
+            );
+        }
+    }
+
+    /**
+     * (Re)registers a slapper's live entity in the id index.
+     */
+    private function trackEntity(
+        Slapper $slapper
+    ): void {
+        $entity = $slapper->getEntity();
+
+        if ($entity !== null) {
+            $this->entities[$entity->getId()] = $slapper;
+        }
     }
 
     public function despawnAll(): void
@@ -538,21 +546,11 @@ if (
             return false;
         }
 
-        $entity = $slapper->getEntity();
-
-        if ($entity !== null) {
-            unset(
-                $this->entities[$entity->getId()]
-            );
-        }
+        $this->forgetEntity($slapper);
 
         $slapper->setPosition($position);
 
-        $entity = $slapper->getEntity();
-
-        if ($entity !== null) {
-            $this->entities[$entity->getId()] = $slapper;
-        }
+        $this->trackEntity($slapper);
 
         $this->save($name);
 
@@ -565,20 +563,6 @@ if (
     public function getSlappers(): array
     {
         return $this->slappers;
-    }
-
-    public function addBlockFromSlapper(
-        string $name,
-        Slapper $slapper,
-        Position $position,
-        Block $block
-    ): SlapperBlock {
-        return $this->addBlock(
-            $name,
-            $position,
-            $block,
-            $slapper->getName()
-        );
     }
 
     public function getBlock(
@@ -652,16 +636,7 @@ if (
             return false;
         }
 
-        $entity =
-            $slapper->getEntity();
-
-        if ($entity !== null) {
-            unset(
-                $this->entities[
-                $entity->getId()
-                ]
-            );
-        }
+        $this->forgetEntity($slapper);
 
         $slapper->despawn();
 
@@ -779,11 +754,6 @@ if (
         $this->db->save();
     }
 
-    public function getDatabase(): Config
-    {
-        return $this->db;
-    }
-
     /**
      * @param array<string, mixed> $data
      */
@@ -843,25 +813,6 @@ if (
     }
 
     /**
-     * @param array<mixed> $array
-     *
-     * @phpstan-assert-if-true array<string, mixed> $array
-     */
-    private static function isStringMap(
-        array $array
-    ): bool {
-        foreach (
-            array_keys($array) as $key
-        ) {
-            if (!is_string($key)) {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    /**
      * Position index key. Uses the world *folder* name because that is what is
      * stored on disk and stays stable across restarts.
      */
@@ -884,34 +835,11 @@ if (
     private function resolveWorld(
         string $world
     ): ?World {
-        $worldManager =
+        return Worlds::resolve(
             $this->main
                 ->getServer()
-                ->getWorldManager();
-
-        $resolved =
-            $worldManager->getWorldByName(
-                $world
-            );
-
-        if ($resolved !== null) {
-            return $resolved;
-        }
-
-        if (
-            $worldManager->isWorldGenerated(
-                $world
-            )
-        ) {
-            $worldManager->loadWorld(
-                $world
-            );
-
-            return $worldManager->getWorldByName(
-                $world
-            );
-        }
-
-        return null;
+                ->getWorldManager(),
+            $world
+        );
     }
 }

@@ -54,16 +54,6 @@ final class SelectionManager
         )]['pos2'] ?? null;
     }
 
-    public function hasBoth(
-        Player $player
-    ): bool {
-        return $this->getPos1(
-            $player
-        ) !== null && $this->getPos2(
-            $player
-        ) !== null;
-    }
-
     /**
      * Both corners in world space, or null when the selection is incomplete or
      * the corners are in different worlds.
@@ -88,27 +78,6 @@ final class SelectionManager
         }
 
         return [$pos1, $pos2];
-    }
-
-    /**
-     * The cuboid as plain vectors in the players' world, ready to hand to a
-     * mine or an outpost.
-     *
-     * @return array{Vector3, Vector3}|null
-     */
-    public function getVectors(
-        Player $player
-    ): ?array {
-        $region = $this->getRegion($player);
-
-        if ($region === null) {
-            return null;
-        }
-
-        return [
-            $region[0]->asVector3(),
-            $region[1]->asVector3()
-        ];
     }
 
     public function clear(

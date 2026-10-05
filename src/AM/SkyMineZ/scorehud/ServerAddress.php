@@ -25,15 +25,6 @@ final class ServerAddress
     {
     }
 
-    /**
-     * Drops the cached address. Only needed in tests; production servers never
-     * change IP/port at runtime.
-     */
-    public static function clearCache(): void
-    {
-        self::$cached = null;
-    }
-
     public static function of(
         Main $main
     ): string {

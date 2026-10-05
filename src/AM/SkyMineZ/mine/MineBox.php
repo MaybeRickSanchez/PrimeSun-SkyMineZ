@@ -58,42 +58,6 @@ class MineBox extends CollisionBox
     }
 
     /**
-     * Every block position inside the box as a flat [x, y, z] triple, ordered
-     * top layer first so a mine fills from the ceiling down.
-     *
-     * Only useful for small volumes; {@link MineFillTask} derives coordinates
-     * arithmetically instead of materialising tens of thousands of arrays.
-     *
-     * @return list<array{int, int, int}>
-     */
-    public function getPositions(): array
-    {
-        $positions = [];
-
-        for (
-            $y = $this->getMaxY();
-            $y >= $this->getMinY();
-            --$y
-        ) {
-            for (
-                $x = $this->getMinX();
-                $x <= $this->getMaxX();
-                ++$x
-            ) {
-                for (
-                    $z = $this->getMinZ();
-                    $z <= $this->getMaxZ();
-                    ++$z
-                ) {
-                    $positions[] = [$x, $y, $z];
-                }
-            }
-        }
-
-        return $positions;
-    }
-
-    /**
      * Builds the shuffled block pool for a refill.
      *
      * Percentages do not have to add up to 100: every entry is scaled by its

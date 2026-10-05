@@ -7,7 +7,9 @@ namespace AM\SkyMineZ\outpost;
 use AM\SkyMineZ\economy\EconomyChangeEventReason;
 use AM\SkyMineZ\economy\GoldEconomy;
 use AM\SkyMineZ\Main;
+use AM\SkyMineZ\useless\Arrays;
 use AM\SkyMineZ\useless\SpreadTask;
+use AM\SkyMineZ\useless\Worlds;
 use pocketmine\math\Vector3;
 use pocketmine\player\Player;
 use pocketmine\scheduler\TaskHandler;
@@ -61,7 +63,7 @@ final class OutpostManager
             if (
                 !is_string($name)
                 || !is_array($data)
-                || !self::isStringMap($data)
+                || !Arrays::isStringMap($data)
             ) {
                 continue;
             }
@@ -139,18 +141,11 @@ final class OutpostManager
             );
         }
 
-        $config = $this->main->getConfigManager();
-
-        $outpost = new Outpost(
+        $outpost = $this->buildOutpost(
             $name,
             $pos1,
             $pos2,
-            $pos1->getWorld(),
-            $config->getInt('outposts.capture-required', 100),
-            $config->getInt('outposts.cooldown-duration', 1800),
-            $config->getInt('outposts.gold-interval', 600),
-            $config->getInt('outposts.gold-chance', 50),
-            $config->getInt('outposts.gold-reward', 1)
+            $pos1->getWorld()
         );
 
         $this->outposts[$name] = $outpost;
@@ -160,6 +155,32 @@ final class OutpostManager
         $this->save($name);
 
         return $outpost;
+    }
+
+    /**
+     * Builds an outpost with the tuning from config.yml. Both creation paths
+     * (new outpost, restored from disk) funnel through here so the values can
+     * never disagree.
+     */
+    private function buildOutpost(
+        string $name,
+        Vector3 $pos1,
+        Vector3 $pos2,
+        World $world
+    ): Outpost {
+        $config = $this->main->getConfigManager();
+
+        return new Outpost(
+            $name,
+            $pos1,
+            $pos2,
+            $world,
+            $config->getInt('outposts.capture-required', 100),
+            $config->getInt('outposts.cooldown-duration', 1800),
+            $config->getInt('outposts.gold-interval', 600),
+            $config->getInt('outposts.gold-chance', 50),
+            $config->getInt('outposts.gold-reward', 1)
+        );
     }
 
     public function remove(
@@ -201,41 +222,9 @@ final class OutpostManager
         return $this->outposts;
     }
 
-    /**
-     * @return list<string>
-     */
-    public function getNames(): array
-    {
-        return array_keys($this->outposts);
-    }
-
     public function count(): int
     {
         return count($this->outposts);
-    }
-
-    /**
-     * The outpost a player is standing in, or null.
-     */
-    public function getOutpostAt(
-        World $world,
-        Vector3 $position
-    ): ?Outpost {
-        foreach (
-            $this->outposts as $outpost
-        ) {
-            if (
-                $outpost->getWorld() !== $world
-            ) {
-                continue;
-            }
-
-            if ($outpost->isIn($position)) {
-                return $outpost;
-            }
-        }
-
-        return null;
     }
 
     /**
@@ -315,11 +304,6 @@ final class OutpostManager
         }
     }
 
-    public function getDatabase(): Config
-    {
-        return $this->db;
-    }
-
     /**
      * Shows the outpost holograms to a player who just spawned in.
      */
@@ -360,7 +344,7 @@ final class OutpostManager
         );
 
         $this->task = $this->main->getScheduler()->scheduleRepeatingTask(
-            new OutpostTask($this, $interval),
+            new OutpostTask($this),
             $interval
         );
     }
@@ -445,25 +429,6 @@ final class OutpostManager
     }
 
     /**
-     * @param array<mixed> $array
-     *
-     * @phpstan-assert-if-true array<string, mixed> $array
-     */
-    private static function isStringMap(
-        array $array
-    ): bool {
-        foreach (
-            array_keys($array) as $key
-        ) {
-            if (!is_string($key)) {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    /**
      * @param array<string, mixed> $data
      */
     private function createFromArray(
@@ -486,24 +451,22 @@ final class OutpostManager
         $pos2 = $data['pos2'];
 
         if (
-            !self::isVectorTriple($pos1)
-            || !self::isVectorTriple($pos2)
+            !Arrays::isVectorTriple($pos1)
+            || !Arrays::isVectorTriple($pos2)
         ) {
             return null;
         }
 
-        $world = $this->resolveWorld(
-            $data['world'],
-            $worldManager
-        );
+        $world = Worlds::resolve(
+            $worldManager,
+            $data['world']
+            );
 
         if ($world === null) {
             return null;
         }
 
-        $config = $this->main->getConfigManager();
-
-        $outpost = new Outpost(
+        $outpost = $this->buildOutpost(
             $name,
             new Vector3(
                 $pos1[0],
@@ -515,12 +478,7 @@ final class OutpostManager
                 $pos2[1],
                 $pos2[2]
             ),
-            $world,
-            $config->getInt('outposts.capture-required', 100),
-            $config->getInt('outposts.cooldown-duration', 1800),
-            $config->getInt('outposts.gold-interval', 600),
-            $config->getInt('outposts.gold-chance', 50),
-            $config->getInt('outposts.gold-reward', 1)
+            $world
         );
 
         $owner = $data['owner'] ?? null;
@@ -548,32 +506,4 @@ final class OutpostManager
      *
      * @phpstan-assert-if-true array{float, float, float} $value
      */
-    private static function isVectorTriple(
-        mixed $value
-    ): bool {
-        return is_array($value)
-            && isset($value[0], $value[1], $value[2])
-            && is_numeric($value[0])
-            && is_numeric($value[1])
-            && is_numeric($value[2]);
-    }
-
-    private function resolveWorld(
-        string $name,
-        WorldManager $worldManager
-    ): ?World {
-        $world = $worldManager->getWorldByName($name);
-
-        if ($world !== null) {
-            return $world;
-        }
-
-        if ($worldManager->isWorldGenerated($name)) {
-            $worldManager->loadWorld($name);
-
-            return $worldManager->getWorldByName($name);
-        }
-
-        return null;
-    }
 }

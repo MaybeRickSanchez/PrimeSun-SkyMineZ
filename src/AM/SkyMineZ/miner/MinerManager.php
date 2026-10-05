@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace AM\SkyMineZ\miner;
 
 use AM\SkyMineZ\Main;
+use AM\SkyMineZ\useless\Arrays;
 use pocketmine\utils\Config;
 
 final class MinerManager
@@ -37,7 +38,7 @@ final class MinerManager
 
         $miner = new Miner(
             $playerName,
-            is_array($data) && self::isStringMap($data)
+            is_array($data) && Arrays::isStringMap($data)
                 ? MinerStates::fromArray($data)
                 : new MinerStates()
         );
@@ -78,20 +79,8 @@ final class MinerManager
      */
     public function saveAndUnload(string $playerName): void
     {
-        $playerName = $this->normalizeName($playerName);
-
-        if (!isset($this->miners[$playerName])) {
-            return;
-        }
-
-        $this->db->set(
-            $playerName,
-            $this->miners[$playerName]->toArray()
-        );
-
-        unset(
-            $this->miners[$playerName]
-        );
+        $this->save($playerName);
+        $this->unload($playerName);
     }
 
     public function saveAll(): void
@@ -146,32 +135,9 @@ final class MinerManager
         return $this->miners;
     }
 
-    public function getDatabase(): Config
-    {
-        return $this->db;
-    }
-
     private function normalizeName(string $playerName): string
     {
         return strtolower($playerName);
-    }
-
-    /**
-     * @param array<mixed> $array
-     *
-     * @phpstan-assert-if-true array<string, mixed> $array
-     */
-    private static function isStringMap(array $array): bool
-    {
-        foreach (
-            array_keys($array) as $key
-        ) {
-            if (!is_string($key)) {
-                return false;
-            }
-        }
-
-        return true;
     }
 
     /**
@@ -189,7 +155,7 @@ final class MinerManager
         foreach ($this->db->getAll() as $playerName => $data) {
             if (
                 !is_array($data)
-                || !self::isStringMap($data)
+                || !Arrays::isStringMap($data)
             ) {
                 continue;
             }

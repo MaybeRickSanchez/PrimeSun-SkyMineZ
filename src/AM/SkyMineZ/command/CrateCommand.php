@@ -210,16 +210,9 @@ final class CrateCommand extends BaseCommand
                     return;
                 }
 
-                $crate = $this->plugin->getCrateManager()->getCrate(
-                    $name
-                );
+                $crate = $this->resolveCrate($player, $name);
 
                 if ($crate === null) {
-                    $this->error(
-                        $player,
-                        "No crate named '{$name}'."
-                    );
-
                     return;
                 }
 
@@ -356,16 +349,9 @@ final class CrateCommand extends BaseCommand
             return true;
         }
 
-        $crate = $this->plugin->getCrateManager()->getCrate(
-            $crateName
-        );
+        $crate = $this->resolveCrate($sender, $crateName);
 
         if ($crate === null) {
-            $this->error(
-                $sender,
-                "No crate named '{$crateName}'."
-            );
-
             return true;
         }
 
@@ -420,16 +406,9 @@ final class CrateCommand extends BaseCommand
                     return;
                 }
 
-                $crate = $this->plugin->getCrateManager()->getCrate(
-                    $name
-                );
+                $crate = $this->resolveCrate($player, $name);
 
                 if ($crate === null) {
-                    $this->error(
-                        $player,
-                        "No crate named '{$name}'."
-                    );
-
                     return;
                 }
 
@@ -491,16 +470,9 @@ final class CrateCommand extends BaseCommand
             return true;
         }
 
-        $crate = $this->plugin->getCrateManager()->getCrate(
-            $crateName
-        );
+        $crate = $this->resolveCrate($sender, $crateName);
 
         if ($crate === null) {
-            $this->error(
-                $sender,
-                "No crate named '{$crateName}'."
-            );
-
             return true;
         }
 
@@ -830,6 +802,32 @@ final class CrateCommand extends BaseCommand
         return true;
     }
 
+    /**
+     * Looks a crate up by name, reporting the miss to the sender.
+     *
+     * Every subcommand that takes a crate name funnels through here so the
+     * "not found" message stays identical everywhere.
+     */
+    private function resolveCrate(
+        CommandSender $sender,
+        ?string $name
+    ): ?Crate {
+        $crate = $name !== null && $name !== ''
+            ? $this->plugin->getCrateManager()->getCrate($name)
+            : null;
+
+        if ($crate === null) {
+            $this->error(
+                $sender,
+                "No crate named '" . ($name ?? '') . "'."
+            );
+
+            return null;
+        }
+
+        return $crate;
+    }
+
     private function handleHelp(
         CommandSender $sender
     ): bool {
@@ -886,14 +884,5 @@ final class CrateCommand extends BaseCommand
         }
 
         return $item;
-    }
-
-    private static function isValidName(
-        string $name
-    ): bool {
-        return preg_match(
-            '/^[A-Za-z0-9_-]{1,32}$/',
-            $name
-        ) === 1;
     }
 }

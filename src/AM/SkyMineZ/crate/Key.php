@@ -83,23 +83,4 @@ final class Key
         return self::getId($item) !== null;
     }
 
-    public static function is(
-        Item $item,
-        string $id
-    ): bool {
-        return self::getId($item) === $id;
-    }
-
-    /**
-     * All crate ids this item could open. An item carries at most one, so this
-     * exists to mirror the crate side of the API.
-     *
-     * @return list<string>
-     */
-    public static function getIds(Item $item): array
-    {
-        $id = self::getId($item);
-
-        return $id === null ? [] : [$id];
-    }
 }

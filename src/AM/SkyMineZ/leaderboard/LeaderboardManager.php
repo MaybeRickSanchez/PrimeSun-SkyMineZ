@@ -5,12 +5,13 @@ declare(strict_types=1);
 namespace AM\SkyMineZ\leaderboard;
 
 use AM\SkyMineZ\Main;
+use AM\SkyMineZ\scorehud\ServerAddress;
+use AM\SkyMineZ\useless\Arrays;
 use AM\SkyMineZ\useless\SpreadTask;
+use AM\SkyMineZ\useless\Worlds;
 use pocketmine\player\Player;
-use pocketmine\Server;
 use pocketmine\utils\Config;
 use pocketmine\world\Position;
-use pocketmine\world\World;
 use pocketmine\world\WorldManager;
 use RuntimeException;
 
@@ -63,7 +64,7 @@ final class LeaderboardManager
             if (
                 !is_string($name)
                 || !is_array($data)
-                || !self::isStringMap($data)
+                || !Arrays::isStringMap($data)
             ) {
                 continue;
             }
@@ -199,14 +200,6 @@ final class LeaderboardManager
         return $this->leaderboards;
     }
 
-    /**
-     * @return list<string>
-     */
-    public function getNames(): array
-    {
-        return array_keys($this->leaderboards);
-    }
-
     public function count(): int
     {
         return count($this->leaderboards);
@@ -268,7 +261,7 @@ final class LeaderboardManager
             $needed[$leaderboard->getType()] = true;
         }
 
-        $serverAddress = $this->getServerAddress();
+        $serverAddress = ServerAddress::of($this->main);
         $top = [];
 
         foreach (
@@ -296,11 +289,6 @@ final class LeaderboardManager
                 $serverAddress
             );
         }
-    }
-
-    public function getDatabase(): Config
-    {
-        return $this->db;
     }
 
     /**
@@ -391,25 +379,6 @@ final class LeaderboardManager
     }
 
     /**
-     * @param array<mixed> $array
-     *
-     * @phpstan-assert-if-true array<string, mixed> $array
-     */
-    private static function isStringMap(
-        array $array
-    ): bool {
-        foreach (
-            array_keys($array) as $key
-        ) {
-            if (!is_string($key)) {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    /**
      * @param array<string, mixed> $data
      */
     private function createFromArray(
@@ -438,10 +407,10 @@ final class LeaderboardManager
             return null;
         }
 
-        $world = $this->resolveWorld(
-            $data['world'],
-            $worldManager
-        );
+        $world = Worlds::resolve(
+            $worldManager,
+            $data['world']
+            );
 
         if ($world === null) {
             return null;
@@ -466,39 +435,4 @@ final class LeaderboardManager
         }
     }
 
-    private function resolveWorld(
-        string $name,
-        WorldManager $worldManager
-    ): ?World {
-        $world = $worldManager->getWorldByName($name);
-
-        if ($world !== null) {
-            return $world;
-        }
-
-        if ($worldManager->isWorldGenerated($name)) {
-            $worldManager->loadWorld($name);
-
-            return $worldManager->getWorldByName($name);
-        }
-
-        return null;
-    }
-
-    private function getServerAddress(): string
-    {
-        $server = $this->main->getServer();
-
-        $ip = $server->getIp();
-        $port = $server->getPort();
-
-        if (
-            $port > 0
-            && $port !== Server::DEFAULT_PORT_IPV4
-        ) {
-            return $ip . ':' . $port;
-        }
-
-        return $ip;
-    }
 }

@@ -273,15 +273,6 @@ final class Crate
         return $this;
     }
 
-    public function removeRewards(): self
-    {
-        $this->rewards = [];
-
-        $this->update();
-
-        return $this;
-    }
-
     /**
      * @return array<int, Reward>
      */
@@ -325,17 +316,6 @@ final class Crate
         return $this;
     }
 
-    public function removeKey(
-        string $keyId
-    ): self
-    {
-        unset(
-            $this->keys[$keyId]
-        );
-
-        return $this;
-    }
-
     public function hasKey(
         string $keyId
     ): bool
@@ -353,11 +333,6 @@ final class Crate
         return array_keys(
             $this->keys
         );
-    }
-
-    public function isOpening(): bool
-    {
-        return $this->busy;
     }
 
     public function isBusy(): bool
@@ -398,6 +373,24 @@ final class Crate
         return $tile->getRealInventory();
     }
 
+    /**
+     * The chest inventory, rebuilding the chest block first when it went
+     * missing. Both preview and opening need this, so it lives here instead of
+     * being copy-pasted into both.
+     */
+    private function getOrSpawnInventory(): ?Inventory
+    {
+        $inventory = $this->getInventory();
+
+        if ($inventory === null) {
+            $this->spawn();
+
+            $inventory = $this->getInventory();
+        }
+
+        return $inventory;
+    }
+
     public function showPreview(
         Player $player
     ): bool
@@ -410,13 +403,7 @@ final class Crate
             return false;
         }
 
-        $inventory = $this->getInventory();
-
-        if ($inventory === null) {
-            $this->spawn();
-
-            $inventory = $this->getInventory();
-        }
+        $inventory = $this->getOrSpawnInventory();
 
         if ($inventory === null) {
             return false;
@@ -501,13 +488,7 @@ final class Crate
             return false;
         }
 
-        $inventory = $this->getInventory();
-
-        if ($inventory === null) {
-            $this->spawn();
-
-            $inventory = $this->getInventory();
-        }
+        $inventory = $this->getOrSpawnInventory();
 
         if ($inventory === null) {
             $player->sendMessage(

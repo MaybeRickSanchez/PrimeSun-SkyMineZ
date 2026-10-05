@@ -32,8 +32,6 @@ final class MineInfo
 
     private bool $filling = false;
 
-    private string $lastReason = '';
-
     private ?MultiLineTextParticle $particle = null;
 
     public function __construct(
@@ -71,16 +69,6 @@ final class MineInfo
     public function getMineName(): string
     {
         return $this->mineName;
-    }
-
-    public function setMineName(
-        string $mineName
-    ): self {
-        $this->mineName = $mineName;
-
-        $this->updateName();
-
-        return $this;
     }
 
     public function getNextResetAt(): int
@@ -123,19 +111,6 @@ final class MineInfo
         $this->filling = $filling;
 
         $this->updateTime();
-
-        return $this;
-    }
-
-    public function getLastReason(): string
-    {
-        return $this->lastReason;
-    }
-
-    public function setLastReason(
-        string $reason
-    ): self {
-        $this->lastReason = $reason;
 
         return $this;
     }

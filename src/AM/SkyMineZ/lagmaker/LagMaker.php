@@ -15,7 +15,6 @@ use pocketmine\item\Item;
 use pocketmine\player\Player;
 use pocketmine\math\AxisAlignedBB;
 use pocketmine\math\Vector3;
-use pocketmine\scheduler\Task;
 use pocketmine\scheduler\TaskHandler;
 use pocketmine\world\World;
 

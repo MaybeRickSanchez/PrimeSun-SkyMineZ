@@ -126,6 +126,23 @@ abstract class BaseCommand extends Command
      *
      * @param list<string> $args
      */
+    /**
+     * Registry names (crates, mines, outposts, slappers): letters, digits,
+     * underscore and dash, 1-32 chars. One canonical rule so a name accepted
+     * by one command is never rejected by another.
+     */
+    protected static function isValidName(
+        string $name
+    ): bool {
+        return preg_match(
+            '/^[A-Za-z0-9_-]{1,32}$/',
+            $name
+        ) === 1;
+    }
+
+    /**
+     * @param list<string> $args
+     */
     protected function joinArguments(
         array $args,
         int $from = 1

@@ -108,12 +108,6 @@ final class BlockParser
         return clone $block;
     }
 
-    public static function clearCache(): void
-    {
-        self::$cache = [];
-        self::$names = null;
-    }
-
     /**
      * @return array<string, string>
      */

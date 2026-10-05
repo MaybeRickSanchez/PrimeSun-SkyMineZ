@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace AM\SkyMineZ\command;
 
 use AM\SkyMineZ\Main;
+use AM\SkyMineZ\slapper\Slapper;
 use pocketmine\command\CommandSender;
 use pocketmine\player\Player;
 
@@ -222,16 +223,9 @@ final class SlapperCommand extends BaseCommand
                     return;
                 }
 
-                $slapper = $this->plugin->getSlapperManager()->getSlapper(
-                    $name
-                );
+                $slapper = $this->resolveSlapper($player, $name);
 
                 if ($slapper === null) {
-                    $this->error(
-                        $player,
-                        "No slapper named '{$name}'."
-                    );
-
                     return;
                 }
 
@@ -305,28 +299,13 @@ final class SlapperCommand extends BaseCommand
                     ? (int) $text
                     : -1;
 
-                $messages = $slapper->getMessages();
-
-                if (
-                    $index < 0
-                    || !isset($messages[$index])
-                ) {
+                if (!$slapper->removeMessage($index)) {
                     $this->error(
                         $sender,
                         'Message index out of range.'
                     );
 
                     return true;
-                }
-
-                unset($messages[$index]);
-
-                $slapper->clearMessages();
-
-                foreach (
-                    array_values($messages) as $message
-                ) {
-                    $slapper->addMessage($message);
                 }
                 break;
 
@@ -427,28 +406,13 @@ final class SlapperCommand extends BaseCommand
                     ? (int) $text
                     : -1;
 
-                $commands = $slapper->getCommands();
-
-                if (
-                    $index < 0
-                    || !isset($commands[$index])
-                ) {
+                if (!$slapper->removeCommand($index)) {
                     $this->error(
                         $sender,
                         'Command index out of range.'
                     );
 
                     return true;
-                }
-
-                unset($commands[$index]);
-
-                $slapper->clearCommands();
-
-                foreach (
-                    array_values($commands) as $command
-                ) {
-                    $slapper->addCommand($command);
                 }
                 break;
 
@@ -541,16 +505,9 @@ final class SlapperCommand extends BaseCommand
                             return;
                         }
 
-                        $slapper = $manager->getSlapper(
-                            $slapperName
-                        );
+                        $slapper = $this->resolveSlapper($player, $slapperName);
 
                         if ($slapper === null) {
-                            $this->error(
-                                $player,
-                                "No slapper named '{$slapperName}'."
-                            );
-
                             return;
                         }
 
@@ -682,13 +639,27 @@ final class SlapperCommand extends BaseCommand
         }
     }
 
-    private static function isValidName(
-        string $name
-    ): bool {
-        return preg_match(
-            '/^[A-Za-z0-9_-]{1,32}$/',
-            $name
-        ) === 1;
+    /**
+     * Looks a slapper up by name, reporting the miss to the sender.
+     */
+    private function resolveSlapper(
+        CommandSender $sender,
+        ?string $name
+    ): ?Slapper {
+        $slapper = $name !== null && $name !== ''
+            ? $this->plugin->getSlapperManager()->getSlapper($name)
+            : null;
+
+        if ($slapper === null) {
+            $this->error(
+                $sender,
+                "No slapper named '" . ($name ?? '') . "'."
+            );
+
+            return null;
+        }
+
+        return $slapper;
     }
 
     private function handleHelp(

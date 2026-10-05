@@ -225,6 +225,29 @@ final class Main extends PluginBase
     }
 
     /**
+     * Writes every store to disk now. This is the one canonical save sequence,
+     * shared by the shutdown path, /skymine save and the menu save button, so
+     * no caller can silently skip a store.
+     *
+     * Unlike onDisable() this requires a fully enabled plugin and lets storage
+     * errors bubble up to the caller for reporting.
+     *
+     * @throws JsonException
+     */
+    public function saveAllData(): void
+    {
+        $this->crateManager->saveAll();
+        $this->pvpManager->saveAll();
+        $this->minerManager->saveAll();
+        $this->moneyEconomy->saveAll();
+        $this->goldEconomy->saveAll();
+        $this->slapperManager->saveAll();
+        $this->leaderboardManager->saveAll();
+        $this->mineManager->saveAll();
+        $this->outpostManager->saveAll();
+    }
+
+    /**
      * Re-reads config.yml and re-applies everything that reads from it.
      */
     public function reload(): void

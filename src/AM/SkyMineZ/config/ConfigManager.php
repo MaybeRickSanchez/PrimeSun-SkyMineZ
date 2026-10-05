@@ -193,40 +193,6 @@ final class ConfigManager
         );
     }
 
-    /**
-     * Resolves a case-insensitive dot path, used by commands where the user
-     * types the key themselves (for example /lagmaker cleanup mode).
-     */
-    public function resolveCaseInsensitive(string $path): ?string
-    {
-        $current = $this->config->getAll();
-        $walked = [];
-
-        foreach (explode('.', $path) as $segment) {
-            $found = null;
-
-            if (is_array($current)) {
-                foreach ($current as $key => $value) {
-                    if (strcasecmp((string) $key, $segment) === 0) {
-                        $found = $value;
-
-                        $walked[] = (string) $key;
-
-                        break;
-                    }
-                }
-            }
-
-            if ($found === null) {
-                return null;
-            }
-
-            $current = $found;
-        }
-
-        return implode('.', $walked);
-    }
-
     public function getConfig(): Config
     {
         return $this->config;

@@ -133,13 +133,6 @@ final class Outpost
         return $this->progress;
     }
 
-    public function getProgressPercent(): float
-    {
-        return $this->captureRequired > 0
-            ? min(1.0, $this->progress / $this->captureRequired)
-            : 0.0;
-    }
-
     public function getAvailableAt(): int
     {
         return $this->availableAt;
@@ -371,19 +364,6 @@ final class Outpost
     public function getGoldReward(): int
     {
         return $this->goldReward;
-    }
-
-    public function getLastGoldAt(): int
-    {
-        return $this->lastGoldAt;
-    }
-
-    public function setLastGoldAt(
-        int $timestamp
-    ): self {
-        $this->lastGoldAt = $timestamp;
-
-        return $this;
     }
 
     /**

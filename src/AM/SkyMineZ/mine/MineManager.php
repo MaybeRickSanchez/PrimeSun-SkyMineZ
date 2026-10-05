@@ -6,7 +6,9 @@ namespace AM\SkyMineZ\mine;
 
 use AM\SkyMineZ\event\MineResetEvent;
 use AM\SkyMineZ\Main;
+use AM\SkyMineZ\useless\Arrays;
 use AM\SkyMineZ\useless\SpreadTask;
+use AM\SkyMineZ\useless\Worlds;
 use pocketmine\math\Vector3;
 use pocketmine\player\Player;
 use pocketmine\scheduler\TaskHandler;
@@ -62,7 +64,7 @@ final class MineManager
             if (
                 !is_string($name)
                 || !is_array($data)
-                || !self::isStringMap($data)
+                || !Arrays::isStringMap($data)
             ) {
                 continue;
             }
@@ -203,14 +205,6 @@ final class MineManager
         return $this->mines;
     }
 
-    /**
-     * @return list<string>
-     */
-    public function getNames(): array
-    {
-        return array_keys($this->mines);
-    }
-
     public function count(): int
     {
         return count($this->mines);
@@ -324,11 +318,6 @@ final class MineManager
         }
     }
 
-    public function getDatabase(): Config
-    {
-        return $this->db;
-    }
-
     /**
      * One second tick: refill whatever is due and respawn holograms for players
      * who just walked into range.
@@ -426,28 +415,6 @@ final class MineManager
     }
 
     /**
-     * JSON objects decode to string-keyed arrays, but a hand-edited file can
-     * contain anything. This keeps the rest of the loader free of cast checks.
-     *
-     * @param array<mixed> $array
-     *
-     * @phpstan-assert-if-true array<string, mixed> $array
-     */
-    private static function isStringMap(
-        array $array
-    ): bool {
-        foreach (
-            array_keys($array) as $key
-        ) {
-            if (!is_string($key)) {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    /**
      * @param array<string, mixed> $data
      */
     private function createFromArray(
@@ -470,24 +437,16 @@ final class MineManager
         $pos2 = $data['pos2'];
 
         if (
-            !is_array($pos1)
-            || !is_array($pos2)
-            || !isset($pos1[0], $pos1[1], $pos1[2])
-            || !isset($pos2[0], $pos2[1], $pos2[2])
-            || !is_numeric($pos1[0])
-            || !is_numeric($pos1[1])
-            || !is_numeric($pos1[2])
-            || !is_numeric($pos2[0])
-            || !is_numeric($pos2[1])
-            || !is_numeric($pos2[2])
+            !Arrays::isVectorTriple($pos1)
+            || !Arrays::isVectorTriple($pos2)
         ) {
             return null;
         }
 
-        $world = $this->resolveWorld(
-            (string) $data['world'],
-            $worldManager
-        );
+        $world = Worlds::resolve(
+            $worldManager,
+            $data['world']
+            );
 
         if ($world === null) {
             return null;
@@ -526,7 +485,7 @@ final class MineManager
         ) {
             if (
                 !is_array($blockData)
-                || !self::isStringMap($blockData)
+                || !Arrays::isStringMap($blockData)
             ) {
                 continue;
             }
@@ -577,10 +536,10 @@ final class MineManager
             return null;
         }
 
-        $world = $this->resolveWorld(
-            (string) $data[0],
-            $worldManager
-        );
+        $world = Worlds::resolve(
+            $worldManager,
+            $data[0]
+            );
 
         if ($world === null) {
             return null;
@@ -594,22 +553,4 @@ final class MineManager
         );
     }
 
-    private function resolveWorld(
-        string $name,
-        WorldManager $worldManager
-    ): ?World {
-        $world = $worldManager->getWorldByName($name);
-
-        if ($world !== null) {
-            return $world;
-        }
-
-        if ($worldManager->isWorldGenerated($name)) {
-            $worldManager->loadWorld($name);
-
-            return $worldManager->getWorldByName($name);
-        }
-
-        return null;
-    }
 }

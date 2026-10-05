@@ -219,16 +219,9 @@ final class LeaderboardCommand extends BaseCommand
         CommandSender $sender,
         array $args
     ): bool {
-        $leaderboard = $this->plugin->getLeaderboardManager()->get(
-            $args[1] ?? ''
-        );
+        $leaderboard = $this->resolveLeaderboard($sender, $args[1] ?? null);
 
         if ($leaderboard === null) {
-            $this->error(
-                $sender,
-                'No leaderboard with that name.'
-            );
-
             return true;
         }
 
@@ -285,16 +278,9 @@ final class LeaderboardCommand extends BaseCommand
             return true;
         }
 
-        $leaderboard = $this->plugin->getLeaderboardManager()->get(
-            $name
-        );
+        $leaderboard = $this->resolveLeaderboard($sender, $name);
 
         if ($leaderboard === null) {
-            $this->error(
-                $sender,
-                "No leaderboard named '{$name}'."
-            );
-
             return true;
         }
 
@@ -325,16 +311,9 @@ final class LeaderboardCommand extends BaseCommand
                 Player $player,
                 array $args
             ): void {
-                $leaderboard = $this->plugin->getLeaderboardManager()->get(
-                    $args[1] ?? ''
-                );
+                $leaderboard = $this->resolveLeaderboard($player, $args[1] ?? null);
 
                 if ($leaderboard === null) {
-                    $this->error(
-                        $player,
-                        "No leaderboard named '" . ($args[1] ?? '') . "'."
-                    );
-
                     return;
                 }
 
@@ -378,6 +357,29 @@ final class LeaderboardCommand extends BaseCommand
             . $position->getFloorX() . ', '
             . $position->getFloorY() . ', '
             . $position->getFloorZ() . ')';
+    }
+
+    /**
+     * Looks a leaderboard up by name, reporting the miss to the sender.
+     */
+    private function resolveLeaderboard(
+        CommandSender $sender,
+        ?string $name
+    ): ?Leaderboard {
+        $leaderboard = $name !== null && $name !== ''
+            ? $this->plugin->getLeaderboardManager()->get($name)
+            : null;
+
+        if ($leaderboard === null) {
+            $this->error(
+                $sender,
+                "No leaderboard named '" . ($name ?? '') . "'."
+            );
+
+            return null;
+        }
+
+        return $leaderboard;
     }
 
     private function handleHelp(

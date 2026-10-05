@@ -6,7 +6,6 @@ namespace AM\SkyMineZ\crate;
 
 use InvalidArgumentException;
 use pocketmine\item\Item;
-use pocketmine\item\VanillaItems;
 use pocketmine\nbt\LittleEndianNbtSerializer;
 use pocketmine\nbt\TreeRoot;
 
