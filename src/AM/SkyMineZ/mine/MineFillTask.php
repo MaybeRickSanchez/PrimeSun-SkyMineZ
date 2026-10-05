@@ -7,6 +7,7 @@ namespace AM\SkyMineZ\mine;
 use Closure;
 use pocketmine\block\Block;
 use pocketmine\scheduler\Task;
+use pocketmine\world\World;
 
 /**
  * One tick of a mine refill: writes up to `blocksPerTick` blocks and stops when
@@ -33,16 +34,45 @@ final class MineFillTask extends Task
     private int $offset = 0;
 
     /**
+     * Loop-invariant geometry, snapshotted once so onRun() pays zero method
+     * calls for bounds on every tick of the refill.
+     */
+    private int $volume;
+
+    private int $layerSize;
+
+    private int $sizeZ;
+
+    private int $minX;
+
+    private int $minZ;
+
+    private int $maxY;
+
+    private World $world;
+
+    private int $budget;
+
+    /**
      * @param list<Block> $pool one entry per volume slot
      * @param (callable(): void)|null $onComplete
      */
     public function __construct(
-        private MineBox $box,
+        MineBox $box,
         array $pool,
-        private int $blocksPerTick = 3000,
+        int $blocksPerTick = 3000,
         ?callable $onComplete = null
     ) {
         $this->pool = $pool;
+
+        $this->sizeZ = $box->getSizeZ();
+        $this->layerSize = $box->getSizeX() * $this->sizeZ;
+        $this->minX = $box->getMinX();
+        $this->minZ = $box->getMinZ();
+        $this->maxY = $box->getMaxY();
+        $this->world = $box->getWorld();
+        $this->volume = $this->layerSize * $box->getSizeY();
+        $this->budget = max(1, $blocksPerTick);
 
         $this->onComplete = $onComplete === null
             ? static function(): void {
@@ -56,37 +86,32 @@ final class MineFillTask extends Task
 
     public function onRun(): void
     {
-        $volume = $this->box->getVolume();
-
-        $sizeZ = $this->box->getSizeZ();
-        $layerSize = $this->box->getSizeX() * $sizeZ;
-
-        $minX = $this->box->getMinX();
-        $minZ = $this->box->getMinZ();
-        $maxY = $this->box->getMaxY();
-
-        $world = $this->box->getWorld();
         $pool = $this->pool;
+        $volume = $this->volume;
 
-        $limit = min(
-            $volume,
-            $this->offset + max(1, $this->blocksPerTick)
-        );
+        $limit = $this->offset + $this->budget;
+
+        if ($limit > $volume) {
+            $limit = $volume;
+        }
+
+        $layerSize = $this->layerSize;
+        $sizeZ = $this->sizeZ;
+        $minX = $this->minX;
+        $minZ = $this->minZ;
+        $maxY = $this->maxY;
+        $world = $this->world;
 
         for (
             $index = $this->offset;
             $index < $limit;
             ++$index
         ) {
-            $layer = intdiv(
-                $index,
-                $layerSize
-            );
             $within = $index % $layerSize;
 
             $world->setBlockAt(
                 $minX + intdiv($within, $sizeZ),
-                $maxY - $layer,
+                $maxY - intdiv($index, $layerSize),
                 $minZ + ($within % $sizeZ),
                 $pool[$index],
                 false
@@ -109,10 +134,8 @@ final class MineFillTask extends Task
      */
     public function getProgress(): float
     {
-        $volume = $this->box->getVolume();
-
-        return $volume > 0
-            ? min(1.0, $this->offset / $volume)
+        return $this->volume > 0
+            ? min(1.0, $this->offset / $this->volume)
             : 1.0;
     }
 }

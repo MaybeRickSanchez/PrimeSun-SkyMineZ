@@ -38,38 +38,48 @@ final class LobbyScoreHud
     public function getLines(
         Player $player
     ): array {
+        $name = $player->getName();
+
         $miner = $this->main->getMinerManager()->getOrLoad(
-            $player->getName()
+            $name
         );
 
-        $placeholders = [
-            'name' => $player->getName(),
-            'prefix_name' => $player->getName(),
-            'gold' => NumberFormatter::short(
-                $this->main->getGoldEconomy()->get(
-                    $player->getName()
-                )
-            ),
-            'money' => NumberFormatter::short(
-                $this->main->getMoneyEconomy()->get(
-                    $player->getName()
-                )
-            ),
-            'mined' => NumberFormatter::short(
-                $miner->getMined()
-            ),
-            'deaths' => NumberFormatter::short(
-                $miner->getDeaths()
-            ),
-            'kills' => NumberFormatter::short(
-                $miner->getKills()
-            ),
-            'kill_streak' => (string) $miner->getKillStreak(),
-            'pvp' => $this->main->getPvpManager()->getState(
-                $player->getName()
-            ) ? 'ON' : 'OFF',
-            'server_address' => ServerAddress::of($this->main)
-        ];
+        /*
+         * The search/replace pair is built once per pass, not once per line:
+         * the old code allocated three arrays plus a closure per line.
+         */
+        $search = [];
+        $replace = [];
+
+        foreach (
+            [
+                'name' => $name,
+                'prefix_name' => $name,
+                'gold' => NumberFormatter::short(
+                    $this->main->getGoldEconomy()->get($name)
+                ),
+                'money' => NumberFormatter::short(
+                    $this->main->getMoneyEconomy()->get($name)
+                ),
+                'mined' => NumberFormatter::short(
+                    $miner->getMined()
+                ),
+                'deaths' => NumberFormatter::short(
+                    $miner->getDeaths()
+                ),
+                'kills' => NumberFormatter::short(
+                    $miner->getKills()
+                ),
+                'kill_streak' => (string) $miner->getKillStreak(),
+                'pvp' => $this->main->getPvpManager()->getState(
+                    $name
+                ) ? 'ON' : 'OFF',
+                'server_address' => ServerAddress::of($this->main)
+            ] as $key => $value
+        ) {
+            $search[] = '{' . $key . '}';
+            $replace[] = $value;
+        }
 
         $result = [];
 
@@ -79,11 +89,8 @@ final class LobbyScoreHud
             ) as $line
         ) {
             $result[] = str_replace(
-                array_map(
-                    static fn(string $key): string => '{' . $key . '}',
-                    array_keys($placeholders)
-                ),
-                array_values($placeholders),
+                $search,
+                $replace,
                 $line
             );
         }

@@ -608,6 +608,13 @@ final class LagMaker implements Listener
         World $world
     ): void
     {
+        /*
+         * Hoisted out of the per-entity loop: with tens of thousands of entities
+         * these would otherwise cost a config lookup each.
+         */
+        $ttlMode = $this->getMode() === self::MODE_TTL;
+        $ttl = $this->getTtl();
+
         foreach (
             $world->getEntities() as $entity
         ) {
@@ -620,8 +627,8 @@ final class LagMaker implements Listener
             }
 
             if (
-                $this->getMode() === self::MODE_TTL
-                && !$this->isExpired($entity)
+                $ttlMode
+                && !$this->isExpired($entity, $ttl)
             ) {
                 continue;
             }
@@ -639,10 +646,9 @@ final class LagMaker implements Listener
      * direction: an item is only removed once it is provably old.
      */
     private function isExpired(
-        ItemEntity $entity
+        ItemEntity $entity,
+        int $ttl
     ): bool {
-        $ttl = $this->getTtl();
-
         if ($ttl <= 0) {
             return true;
         }

@@ -16,9 +16,9 @@ use pocketmine\world\World;
  * upwards should raise the base position themselves, which is what
  * {@link OutpostInfo::computeBasePosition()} does.
  *
- * The whole stack is rebuilt only when the text actually changes, because every
- * rebuild despawns and respawns each line, which is a visible flicker and costs
- * one packet per line.
+ * Changed lines are updated in place with a single packet each: no despawn /
+ * respawn pair, no flicker. A full rebuild happens only on structural changes
+ * (line count or positions), which are rare compared to text ticks.
  */
 final class MultiLineTextParticle
 {
@@ -53,6 +53,10 @@ final class MultiLineTextParticle
      *
      * Missing lines are padded with an empty string so that setting line 3
      * without touching lines 0-2 does not leave holes in the hologram.
+     *
+     * Only the touched line is re-sent, and only when its text actually changed:
+     * a countdown tick costs one packet instead of a full despawn/respawn cycle
+     * over every line.
      */
     public function setLine(
         int $id,
@@ -68,14 +72,33 @@ final class MultiLineTextParticle
             return;
         }
 
+        $count = count($this->texts);
+
         $this->texts[$id] = $text;
 
         ksort($this->texts);
 
         $this->repack();
 
-        if ($this->spawned) {
-            $this->rebuild();
+        /*
+         * repack() closes gaps, so an out-of-range id lands on the last slot;
+         * anything else keeps its index.
+         */
+        $index = $id < $count ? $id : $count;
+
+        /*
+         * Line objects outlive a despawn, so their existence — not the spawned
+         * flag — decides whether there is something to update. This also keeps
+         * per-player-only lines fresh: they are re-sent to the player they were
+         * shown to, instead of going stale until the next global rebuild.
+         */
+        if (isset($this->lines[$index])) {
+            $this->lines[$index]->setText($text);
+        } elseif ($this->spawned) {
+            $line = $this->createLine($index, $text);
+            $line->spawn();
+
+            $this->lines[$index] = $line;
         }
     }
 
@@ -117,6 +140,10 @@ final class MultiLineTextParticle
      * Replaces every line at once. Does nothing when the result is identical,
      * which keeps the 10-minute leaderboard refresh from flickering.
      *
+     * When only the text changed (same line count), each differing line is
+     * updated in place instead of tearing the whole stack down: a 14-line board
+     * whose first row changed costs 1 packet instead of 28.
+     *
      * @param list<string> $lines
      */
     public function setLines(
@@ -133,16 +160,31 @@ final class MultiLineTextParticle
             return;
         }
 
-        $wasSpawned = $this->spawned;
-
-        if ($wasSpawned) {
-            $this->deSpawn();
-        }
+        $oldCount = count($this->texts);
 
         $this->texts = $lines;
 
-        if ($wasSpawned) {
-            $this->spawn();
+        if (
+            !$this->spawned
+            || count($lines) !== $oldCount
+        ) {
+            /*
+             * Structural change (or nothing on screen yet): positions shift, so
+             * a single rebuild is the correct primitive here.
+             */
+            if ($this->spawned) {
+                $this->rebuild();
+            }
+
+            return;
+        }
+
+        foreach (
+            $lines as $id => $text
+        ) {
+            if (isset($this->lines[$id])) {
+                $this->lines[$id]->setText($text);
+            }
         }
     }
 

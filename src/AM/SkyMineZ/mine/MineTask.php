@@ -33,7 +33,7 @@ final class MineTask extends Task
     {
         $this->manager->onTick();
 
-        if (--$this->ticksSinceHologram < 0) {
+        if (--$this->ticksSinceHologram <= 0) {
             $this->ticksSinceHologram = self::HOLOGRAM_INTERVAL;
 
             $this->manager->tickHolograms();

@@ -17,7 +17,12 @@ use pocketmine\Server;
 final class ReadOnlyInventory
 {
     /**
-     * @var array<int, true>
+     * spl_object_id() values are reused after garbage collection, so the object
+     * itself is stored too and identity-checked on lookup: a different inventory
+     * that happens to reuse an id must never inherit the read-only flag (for
+     * example when a crate chunk unloads mid-preview).
+     *
+     * @var array<int, Inventory>
      */
     private array $inventories = [];
 
@@ -87,7 +92,7 @@ final class ReadOnlyInventory
     ): void {
         $this->inventories[
         spl_object_id($inventory)
-        ] = true;
+        ] = $inventory;
     }
 
     public function remove(
@@ -107,11 +112,10 @@ final class ReadOnlyInventory
             return false;
         }
 
-        return isset(
-            $this->inventories[
-            spl_object_id($inventory)
-            ]
-        );
+        $id = spl_object_id($inventory);
+
+        return isset($this->inventories[$id])
+            && $this->inventories[$id] === $inventory;
     }
 
     public function open(

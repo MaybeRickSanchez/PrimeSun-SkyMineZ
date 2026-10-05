@@ -13,8 +13,25 @@ use pocketmine\Server;
  */
 final class ServerAddress
 {
+    /**
+     * The address never changes while the server runs (IP and port are fixed
+     * at startup), so it is resolved once and reused by every sidebar pass and
+     * every leaderboard footer instead of re-reading server properties per
+     * player.
+     */
+    private static ?string $cached = null;
+
     private function __construct()
     {
+    }
+
+    /**
+     * Drops the cached address. Only needed in tests; production servers never
+     * change IP/port at runtime.
+     */
+    public static function clearCache(): void
+    {
+        self::$cached = null;
     }
 
     public static function of(
@@ -32,16 +49,18 @@ final class ServerAddress
     public static function fromServer(
         Server $server
     ): string {
-        $ip = $server->getIp();
-        $port = $server->getPort();
+        if (self::$cached === null) {
+            $ip = $server->getIp();
+            $port = $server->getPort();
 
-        if (
-            $port <= 0
-            || $port === Server::DEFAULT_PORT_IPV4
-        ) {
-            return $ip;
+            self::$cached = (
+                $port <= 0
+                || $port === Server::DEFAULT_PORT_IPV4
+            )
+                ? $ip
+                : $ip . ':' . $port;
         }
 
-        return $ip . ':' . $port;
+        return self::$cached;
     }
 }

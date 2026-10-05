@@ -42,6 +42,16 @@ final class MiddleLobbyScoreHud
             )
         ];
 
+        $search = [];
+        $replace = [];
+
+        foreach (
+            $placeholders as $key => $value
+        ) {
+            $search[] = '{' . $key . '}';
+            $replace[] = $value;
+        }
+
         $result = [];
 
         foreach (
@@ -50,11 +60,8 @@ final class MiddleLobbyScoreHud
             ) as $line
         ) {
             $result[] = str_replace(
-                array_map(
-                    static fn(string $key): string => '{' . $key . '}',
-                    array_keys($placeholders)
-                ),
-                array_values($placeholders),
+                $search,
+                $replace,
                 $line
             );
         }

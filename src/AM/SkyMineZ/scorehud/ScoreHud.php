@@ -145,10 +145,12 @@ final class ScoreHud implements Listener
     {
         SpreadTask::spread(
             $this->main,
-            array_values(
-                $this->main->getServer()
-                    ->getOnlinePlayers()
-            ),
+            /*
+             * No array_values() here: SpreadTask::flatten() already reindexes,
+             * so one copy per pass is enough.
+             */
+            $this->main->getServer()
+                ->getOnlinePlayers(),
             $this->getPlayersPerTick(),
             function(mixed $player): void {
                 if ($player instanceof Player) {

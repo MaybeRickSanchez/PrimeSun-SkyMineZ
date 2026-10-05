@@ -71,17 +71,57 @@ class CollisionBox
             && $pos->z <= $this->maxZ;
     }
 
+    private ?Vector3 $center = null;
+
     /**
      * Middle of the box. Handy for picking "the player furthest from the middle"
      * and for placing a label above a mine.
+     *
+     * Memoized: boxes are immutable after construction, so the center never
+     * changes and callers like the per-second outpost scan get it for free.
      */
     public function getCenter(): Vector3
     {
-        return new Vector3(
+        return $this->center ??= new Vector3(
             ($this->minX + $this->maxX) / 2,
             ($this->minY + $this->maxY) / 2,
             ($this->minZ + $this->maxZ) / 2
         );
+    }
+
+    /**
+     * Normalized integer bounds. MineFillTask reads these every tick instead of
+     * re-running min()/max() over the corners, which also keeps the per-tick
+     * path free of method-call chains into getPos1()/getPos2().
+     */
+    public function getMinX(): int
+    {
+        return (int) $this->minX;
+    }
+
+    public function getMinY(): int
+    {
+        return (int) $this->minY;
+    }
+
+    public function getMinZ(): int
+    {
+        return (int) $this->minZ;
+    }
+
+    public function getMaxX(): int
+    {
+        return (int) $this->maxX;
+    }
+
+    public function getMaxY(): int
+    {
+        return (int) $this->maxY;
+    }
+
+    public function getMaxZ(): int
+    {
+        return (int) $this->maxZ;
     }
 
     public function getWorld(): World

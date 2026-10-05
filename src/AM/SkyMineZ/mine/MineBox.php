@@ -47,54 +47,6 @@ class MineBox extends CollisionBox
         return $this->getMaxZ() - $this->getMinZ() + 1;
     }
 
-    public function getMinX(): int
-    {
-        return (int) min(
-            $this->getPos1()->x,
-            $this->getPos2()->x
-        );
-    }
-
-    public function getMinY(): int
-    {
-        return (int) min(
-            $this->getPos1()->y,
-            $this->getPos2()->y
-        );
-    }
-
-    public function getMinZ(): int
-    {
-        return (int) min(
-            $this->getPos1()->z,
-            $this->getPos2()->z
-        );
-    }
-
-    public function getMaxX(): int
-    {
-        return (int) max(
-            $this->getPos1()->x,
-            $this->getPos2()->x
-        );
-    }
-
-    public function getMaxY(): int
-    {
-        return (int) max(
-            $this->getPos1()->y,
-            $this->getPos2()->y
-        );
-    }
-
-    public function getMaxZ(): int
-    {
-        return (int) max(
-            $this->getPos1()->z,
-            $this->getPos2()->z
-        );
-    }
-
     public function getCenter(): Position
     {
         return new Position(

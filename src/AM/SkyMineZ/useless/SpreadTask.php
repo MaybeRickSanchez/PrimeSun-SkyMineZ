@@ -13,11 +13,10 @@ use pocketmine\scheduler\TaskHandler;
  * Walks a list incrementally, visiting a fixed number of entries per tick, so
  * iterating a large collection never spends a whole tick of the main thread.
  *
- * This is a one-shot task: as soon as every entry has been visited the handler
- * cancels itself and the completion callback runs. It must therefore be
- * scheduled with {@link TaskScheduler::scheduleDelayedTask()} and never with
- * {@link TaskScheduler::scheduleRepeatingTask()}, otherwise every completed pass
- * would keep re-running forever.
+ * The task is self-cancelling: as soon as every entry has been visited the
+ * handler cancels itself and the completion callback runs. Always schedule it
+ * through {@link SpreadTask::spread()}, which arms a delayed repeating task
+ * and therefore keeps visiting entries on every tick until the list is done.
  *
  *     SpreadTask::spread($plugin, $bigList, 500, function($entry): void {
  *         // at most 500 entries per tick
@@ -103,11 +102,17 @@ final class SpreadTask extends Task
             return null;
         }
 
+        /*
+         * Delayed *repeating*: a one-shot delayed task would run onRun() exactly
+         * once and silently drop every entry past the first batch. The task
+         * cancels itself in finish(), so no handler leaks.
+         */
         return $plugin
             ->getScheduler()
-            ->scheduleDelayedTask(
+            ->scheduleDelayedRepeatingTask(
                 $task,
-                max(1, $delay)
+                max(1, $delay),
+                1
             );
     }
 
@@ -165,6 +170,13 @@ final class SpreadTask extends Task
 
             return;
         }
+
+        /*
+         * The per-tick budget resets on every run. Without this reset the first
+         * tick would consume the whole budget and every later tick would visit
+         * zero entries, stalling the task forever.
+         */
+        $this->processed = 0;
 
         while (
             $this->index < $total

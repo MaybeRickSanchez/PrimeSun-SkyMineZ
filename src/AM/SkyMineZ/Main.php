@@ -356,21 +356,27 @@ final class Main extends PluginBase
         // The sidebar registers itself as a listener, so build it first.
         $this->scoreHud = new ScoreHud($this);
 
+        /*
+         * Same-priority handlers run in registration order, so the protections
+         * that cancel block breaks (crate, mine, slapper) are registered before
+         * MinerListener: otherwise a break that gets cancelled would still be
+         * counted towards the MINED stat.
+         */
         foreach (
             [
                 new CrateListener(
                     $this->crateManager,
                     $this
                 ),
-                new EconomyListener($this),
-                new PvpListener($this),
-                new MinerListener($this),
                 new MineListener($this),
-                new OutpostListener($this),
                 new SlapperListener(
                     $this->slapperManager,
                     $this
                 ),
+                new EconomyListener($this),
+                new PvpListener($this),
+                new MinerListener($this),
+                new OutpostListener($this),
                 new LeaderboardListener($this),
                 $this->scoreHud
             ] as $listener

@@ -24,6 +24,13 @@ final class TextParticle
 
     private bool $spawned = false;
 
+    /**
+     * Who the text was last shown to: null means the whole world. Remembered so
+     * that a text change re-sends to the same audience instead of leaking a
+     * per-player hologram to everybody.
+     */
+    private ?Player $audience = null;
+
     public function __construct(
         string $text,
         private Vector3 $position,
@@ -34,10 +41,18 @@ final class TextParticle
 
     public function setText(string $text): void
     {
+        if ($this->particle->getText() === $text) {
+            return;
+        }
+
         $this->particle->setText($text);
 
         if ($this->spawned) {
-            $this->spawn();
+            /*
+             * Re-send in place: no despawn/respawn pair, so the client swaps the
+             * text with one packet and no flicker.
+             */
+            $this->spawn($this->audience);
         }
     }
 
@@ -59,6 +74,7 @@ final class TextParticle
             $player !== null ? [$player] : null
         );
 
+        $this->audience = $player;
         $this->spawned = true;
     }
 
