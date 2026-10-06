@@ -274,6 +274,10 @@ final class LeaderboardManager
                 Leaderboard::TYPE_GOLD => $this->getTopNumeric(
                     $this->main->getGoldEconomy()->getSnapshot()
                 ),
+                Leaderboard::TYPE_TEAM_LEVEL, Leaderboard::TYPE_TEAM_WINS => $this->getTopField(
+                    $this->main->getTeamManager()->getSnapshot(),
+                    $type === Leaderboard::TYPE_TEAM_LEVEL ? 'level' : 'wins'
+                ),
                 default => $this->getTopField(
                     $this->main->getMinerManager()->getSnapshot(),
                     $type

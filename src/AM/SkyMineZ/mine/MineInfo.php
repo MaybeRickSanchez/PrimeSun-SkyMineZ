@@ -20,7 +20,6 @@ final class MineInfo
     public const LINE_NAME = 0;
     public const LINE_TIMER = 1;
     public const LINE_BAR = 2;
-    public const LINE_STATUS = 3;
 
     private ?Position $position;
 
@@ -60,7 +59,7 @@ final class MineInfo
         }
 
         if ($this->particle !== null) {
-            $this->particle->setPosition($position);
+            $this->particle->setPosition($position, $position->getWorld());
         }
 
         return $this;

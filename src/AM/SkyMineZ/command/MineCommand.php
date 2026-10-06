@@ -5,9 +5,12 @@ declare(strict_types=1);
 namespace AM\SkyMineZ\command;
 
 use AM\SkyMineZ\Main;
+use AM\SkyMineZ\config\Messages;
+use AM\SkyMineZ\mine\MineAdminForm;
 use AM\SkyMineZ\mine\Mine;
 use AM\SkyMineZ\mine\MineBlock;
 use AM\SkyMineZ\useless\NumberFormatter;
+use AM\SkyMineZ\useless\Positions;
 use pocketmine\command\CommandSender;
 use pocketmine\player\Player;
 use pocketmine\world\Position;
@@ -60,6 +63,7 @@ final class MineCommand extends BaseCommand
             'setlabel' => $this->handleLabel($sender, $args),
             'reset' => $this->handleReset($sender, $args),
             'clearblocks' => $this->handleClearBlocks($sender, $args),
+            'menu' => $this->handleMenu($sender),
             default => $this->handleHelp($sender)
         };
     }
@@ -83,8 +87,7 @@ final class MineCommand extends BaseCommand
                 if ($name === null || !self::isValidName($name)) {
                     $this->error(
                         $player,
-                        'Usage: /mine create <name>  '
-                        . '(letters, digits, underscore and dash only)'
+                        Messages::get($this->plugin, Messages::MINE_CREATE_USAGE)
                     );
 
                     return;
@@ -96,7 +99,7 @@ final class MineCommand extends BaseCommand
                 if ($region === null) {
                     $this->error(
                         $player,
-                        'Select the region first: /skymine pos1 and /skymine pos2.'
+                        Messages::get($this->plugin, Messages::COMMON_SELECT_REGION)
                     );
 
                     return;
@@ -106,10 +109,12 @@ final class MineCommand extends BaseCommand
 
                 /*
                  * The label sits above the top corner of the box so it never
-                 * ends up inside the ore.
+                 * ends up inside the ore. Use min+size/2 (not pos1+size/2):
+                 * pos1 may be the max corner, which would push the label
+                 * outside the box.
                  */
                 $label = new Position(
-                    $pos1->getFloorX() + (
+                    min($pos1->getFloorX(), $pos2->getFloorX()) + (
                         (int) abs(
                             $pos2->getFloorX() - $pos1->getFloorX()
                         ) / 2
@@ -118,7 +123,7 @@ final class MineCommand extends BaseCommand
                         $pos1->getFloorY(),
                         $pos2->getFloorY()
                     ) + 3,
-                    $pos1->getFloorZ() + (
+                    min($pos1->getFloorZ(), $pos2->getFloorZ()) + (
                         (int) abs(
                             $pos2->getFloorZ() - $pos1->getFloorZ()
                         ) / 2
@@ -144,13 +149,12 @@ final class MineCommand extends BaseCommand
 
                 $this->success(
                     $player,
-                    "Created mine '{$name}' (" . $mine->getMineBox()->getVolume()
-                    . ' blocks).'
+                    Messages::get($this->plugin, Messages::MINE_CREATED, ['name' => $name, 'blocks' => $mine->getMineBox()->getVolume()])
                 );
 
                 $player->sendMessage(
                     $this->prefixed(
-                        '§7Now add blocks: /mine block add ' . $name . ' stone 60'
+                        Messages::get($this->plugin, Messages::MINE_ADD_BLOCKS_HINT, ['name' => $name])
                     )
                 );
             }
@@ -169,7 +173,7 @@ final class MineCommand extends BaseCommand
         if ($name === null) {
             $this->error(
                 $sender,
-                'Usage: /mine remove <name>'
+                Messages::get($this->plugin, Messages::MINE_REMOVE_USAGE)
             );
 
             return true;
@@ -182,11 +186,11 @@ final class MineCommand extends BaseCommand
         $removed
             ? $this->success(
                 $sender,
-                "Removed mine '{$name}'."
+                Messages::get($this->plugin, Messages::MINE_REMOVED, ['name' => $name])
             )
             : $this->error(
                 $sender,
-                "No mine named '{$name}'."
+                Messages::get($this->plugin, Messages::MINE_UNKNOWN, ['name' => $name])
             );
 
         return true;
@@ -200,7 +204,7 @@ final class MineCommand extends BaseCommand
         if ($manager->count() === 0) {
             $this->info(
                 $sender,
-                'No mines are configured.'
+                Messages::get($this->plugin, Messages::MINE_NONE)
             );
 
             return true;
@@ -208,7 +212,7 @@ final class MineCommand extends BaseCommand
 
         $sender->sendMessage(
             $this->prefixed(
-                '§eMines (' . $manager->count() . '):'
+                Messages::get($this->plugin, Messages::MINE_LIST_TITLE, ['count' => $manager->count()])
             )
         );
 
@@ -217,14 +221,13 @@ final class MineCommand extends BaseCommand
         ) {
             $sender->sendMessage(
                 $this->prefixed(
-                    '§f' . $name . ' §8| §7'
-                    . $mine->getMineBox()->getVolume() . ' blocks §8| §7'
-                    . count($mine->getBlocks()) . ' block types §8| §7'
-                    . ($mine->getResetInterval() > 0
-                        ? 'every ' . NumberFormatter::duration(
-                            $mine->getResetInterval()
-                        )
-                        : 'manual')
+                    Messages::get($this->plugin, Messages::MINE_LIST_ROW,
+                        [
+                            'name' => $name,
+                            'volume' => $mine->getMineBox()->getVolume(),
+                            'types' => count($mine->getBlocks()),
+                            'interval' => $mine->getResetInterval() > 0 ? 'every ' . NumberFormatter::duration($mine->getResetInterval()) : 'manual'
+                        ])
                 )
             );
         }
@@ -249,38 +252,27 @@ final class MineCommand extends BaseCommand
 
         $sender->sendMessage(
             $this->prefixed(
-                '§eMine ' . $mine->getName()
+                Messages::get($this->plugin, Messages::MINE_INFO_TITLE, ['name' => $mine->getName()])
             )
         );
         $sender->sendMessage(
             $this->prefixed(
-                '§7World: §f' . $mine->getWorld()->getFolderName()
+                Messages::get($this->plugin, Messages::MINE_INFO_WORLD, ['world' => $mine->getWorld()->getFolderName()])
             )
         );
         $sender->sendMessage(
             $this->prefixed(
-                '§7Size: §f' . $box->getSizeX() . 'x' . $box->getSizeY()
-                . 'x' . $box->getSizeZ() . ' §7(' . $box->getVolume() . ' blocks)'
+                Messages::get($this->plugin, Messages::MINE_INFO_SIZE, ['size' => $box->getSizeX() . 'x' . $box->getSizeY() . 'x' . $box->getSizeZ(), 'volume' => $box->getVolume()])
             )
         );
         $sender->sendMessage(
             $this->prefixed(
-                '§7Interval: §f'
-                . ($mine->getResetInterval() > 0
-                    ? NumberFormatter::duration(
-                        $mine->getResetInterval()
-                    )
-                    : 'manual only')
+                Messages::get($this->plugin, Messages::MINE_INFO_INTERVAL, ['interval' => $mine->getResetInterval() > 0 ? NumberFormatter::duration($mine->getResetInterval()) : 'manual only'])
             )
         );
         $sender->sendMessage(
             $this->prefixed(
-                '§7State: §f'
-                . ($mine->isFilling()
-                    ? 'refilling'
-                    : 'idle')
-                . ' §7| §7configured percentages: §f'
-                . $mine->getTotalPercent() . '%'
+                Messages::get($this->plugin, Messages::MINE_INFO_STATE, ['state' => $mine->isFilling() ? 'refilling' : 'idle', 'percent' => $mine->getTotalPercent()])
             )
         );
 
@@ -317,7 +309,7 @@ final class MineCommand extends BaseCommand
 
                     $this->success(
                         $player,
-                        'pos1 set to ' . $this->format($position) . '.'
+                        Messages::get($this->plugin, Messages::SKYMINE_POS_SET, ['which' => 'pos1', 'world' => $position->getWorld()->getFolderName(), 'x' => $position->getFloorX(), 'y' => $position->getFloorY(), 'z' => $position->getFloorZ()])
                     );
 
                     return;
@@ -330,7 +322,7 @@ final class MineCommand extends BaseCommand
 
                 $this->success(
                     $player,
-                    'pos2 set to ' . $this->format($position) . '.'
+                    Messages::get($this->plugin, Messages::SKYMINE_POS_SET, ['which' => 'pos2', 'world' => $position->getWorld()->getFolderName(), 'x' => $position->getFloorX(), 'y' => $position->getFloorY(), 'z' => $position->getFloorZ()])
                 );
             }
         );
@@ -356,7 +348,7 @@ final class MineCommand extends BaseCommand
         ) {
             $this->error(
                 $sender,
-                'Usage: /mine setinterval <name> <seconds>  (0 = manual only)'
+                Messages::get($this->plugin, Messages::MINE_INTERVAL_USAGE)
             );
 
             return true;
@@ -372,11 +364,7 @@ final class MineCommand extends BaseCommand
 
         $this->success(
             $sender,
-            'Interval set to ' . ($mine->getResetInterval() > 0
-                ? NumberFormatter::duration(
-                    $mine->getResetInterval()
-                )
-                : 'manual only') . '.'
+            Messages::get($this->plugin, Messages::MINE_INTERVAL_SET_TO, ['value' => $mine->getResetInterval() > 0 ? NumberFormatter::duration($mine->getResetInterval()) : 'manual only'])
         );
 
         return true;
@@ -415,7 +403,7 @@ final class MineCommand extends BaseCommand
 
                 $this->success(
                     $player,
-                    'Label moved to ' . $this->format($position) . '.'
+                    Messages::get($this->plugin, Messages::MINE_LABEL_SET, ['where' => Positions::describe($position)])
                 );
             }
         );
@@ -445,11 +433,11 @@ final class MineCommand extends BaseCommand
             $started === []
                 ? $this->error(
                     $sender,
-                    'No mine could be reset (empty or already refilling).'
+                    Messages::get($this->plugin, Messages::MINE_RESET_NONE)
                 )
                 : $this->success(
                     $sender,
-                    'Resetting ' . count($started) . ' mine(s).'
+                    Messages::get($this->plugin, Messages::MINE_RESETTING, ['count' => count($started)])
                 );
 
             return true;
@@ -467,7 +455,7 @@ final class MineCommand extends BaseCommand
         )) {
             $this->error(
                 $sender,
-                'That mine has no blocks yet or is already refilling.'
+                Messages::get($this->plugin, Messages::MINE_REFILL_BUSY)
             );
 
             return true;
@@ -475,7 +463,7 @@ final class MineCommand extends BaseCommand
 
         $this->success(
             $sender,
-            "Refilling '{$name}'."
+            Messages::get($this->plugin, Messages::MINE_REFILLING_NAMED, ['name' => $name])
         );
 
         return true;
@@ -502,7 +490,7 @@ final class MineCommand extends BaseCommand
 
         $this->success(
             $sender,
-            'Block list cleared.'
+            Messages::get($this->plugin, Messages::MINE_BLOCKS_CLEARED)
         );
 
         return true;
@@ -528,7 +516,7 @@ final class MineCommand extends BaseCommand
         if ($mine === null) {
             $this->error(
                 $sender,
-                'Usage: /mine block <add|remove|list> <mine> ...'
+                Messages::get($this->plugin, Messages::MINE_BLOCK_USAGE)
             );
 
             return true;
@@ -558,7 +546,7 @@ final class MineCommand extends BaseCommand
             default:
                 $this->error(
                     $sender,
-                    'Unknown action. Use add, remove or list.'
+                    Messages::get($this->plugin, Messages::MINE_BLOCK_BAD)
                 );
 
                 return true;
@@ -585,7 +573,7 @@ final class MineCommand extends BaseCommand
         ) {
             $this->error(
                 $sender,
-                'Usage: /mine block add <mine> <block> <percent 1-100>'
+                Messages::get($this->plugin, Messages::MINE_BLOCK_ADD_USAGE)
             );
 
             return true;
@@ -596,11 +584,7 @@ final class MineCommand extends BaseCommand
         if ($block === null) {
             $this->error(
                 $sender,
-                "Unknown block '{$blockName}'. Try one of: "
-                . implode(
-                    ', ',
-                    BlockParser::suggestions()
-                ) . ', ...'
+                Messages::get($this->plugin, Messages::MINE_BLOCK_UNKNOWN, ['block' => $blockName, 'suggestions' => implode(', ', BlockParser::suggestions())])
             );
 
             return true;
@@ -628,14 +612,13 @@ final class MineCommand extends BaseCommand
 
         $this->success(
             $sender,
-            "Added {$percent}% {$block->getName()} to '{$mine->getName()}'."
+            Messages::get($this->plugin, Messages::MINE_BLOCK_ADDED_FULL, ['percent' => $percent, 'block' => $block->getName(), 'mine' => $mine->getName()])
         );
 
         if ($mine->getTotalPercent() !== 100) {
             $this->info(
                 $sender,
-                'Percentages currently add up to '
-                . $mine->getTotalPercent() . '%; they are scaled on reset.'
+                Messages::get($this->plugin, Messages::MINE_WEIGHT_TOTAL, ['total' => $mine->getTotalPercent()])
             );
         }
 
@@ -660,7 +643,7 @@ final class MineCommand extends BaseCommand
         ) {
             $this->error(
                 $sender,
-                'Block index out of range.'
+                Messages::get($this->plugin, Messages::MINE_INDEX_RANGE)
             );
 
             return true;
@@ -674,7 +657,7 @@ final class MineCommand extends BaseCommand
 
         $this->success(
             $sender,
-            'Block entry removed.'
+            Messages::get($this->plugin, Messages::MINE_BLOCK_REMOVED)
         );
 
         return true;
@@ -689,7 +672,7 @@ final class MineCommand extends BaseCommand
         if ($blocks === []) {
             $this->info(
                 $sender,
-                "Mine '{$mine->getName()}' has no blocks yet."
+                Messages::get($this->plugin, Messages::MINE_NO_BLOCKS, ['mine' => $mine->getName()])
             );
 
             return true;
@@ -697,7 +680,7 @@ final class MineCommand extends BaseCommand
 
         $sender->sendMessage(
             $this->prefixed(
-                '§eBlocks of ' . $mine->getName() . ':'
+                Messages::get($this->plugin, Messages::MINE_BLOCKS_TITLE, ['mine' => $mine->getName()])
             )
         );
 
@@ -706,24 +689,12 @@ final class MineCommand extends BaseCommand
         ) {
             $sender->sendMessage(
                 $this->prefixed(
-                    '§f#' . $index . ' §8| §7'
-                    . $entry->getName() . ' §8| §e'
-                    . $entry->getPercent() . '%'
+                    Messages::get($this->plugin, Messages::MINE_BLOCK_ROW, ['index' => $index, 'name' => $entry->getName(), 'percent' => $entry->getPercent()])
                 )
             );
         }
 
         return true;
-    }
-
-    private function format(
-        Position $position
-    ): string {
-        return $position->getWorld()->getFolderName()
-            . ' ('
-            . $position->getFloorX() . ', '
-            . $position->getFloorY() . ', '
-            . $position->getFloorZ() . ')';
     }
 
     /**
@@ -740,7 +711,7 @@ final class MineCommand extends BaseCommand
         if ($mine === null) {
             $this->error(
                 $sender,
-                "No mine named '" . ($name ?? '') . "'."
+                Messages::get($this->plugin, Messages::MINE_UNKNOWN, ['name' => (string) ($name ?? '')])
             );
 
             return null;
@@ -749,26 +720,42 @@ final class MineCommand extends BaseCommand
         return $mine;
     }
 
+    private function handleMenu(
+        CommandSender $sender
+    ): bool {
+        if (!$sender instanceof Player) {
+            $this->error($sender, Messages::get($this->plugin, Messages::MINE_MENU_ONLY));
+
+            return true;
+        }
+
+        (new MineAdminForm($this->plugin))->send($sender);
+
+        return true;
+    }
+
     private function handleHelp(
         CommandSender $sender
     ): bool {
         $lines = [
-            '§e/mine pos1 §7- select the first corner (look at a block)',
-            '§e/mine pos2 §7- select the second corner',
-            '§e/mine create <name> §7- create a mine from the selection',
-            '§e/mine block add <mine> <block> <percent> §7- add a block',
-            '§e/mine block remove <mine> <index> §7- remove a block',
-            '§e/mine block list <mine> §7- list the block list',
-            '§e/mine clearblocks <mine> §7- empty the block list',
-            '§e/mine setinterval <mine> <seconds> §7- 0 disables auto reset',
-            '§e/mine setlabel <mine> §7- move the hologram',
-            '§e/mine reset <mine|all> §7- refill now',
-            '§e/mine info <mine> §7- details',
-            '§e/mine list §7- list all mines'
+            Messages::get($this->plugin, Messages::MINE_HELP_POS1),
+            Messages::get($this->plugin, Messages::MINE_HELP_POS2),
+            Messages::get($this->plugin, Messages::MINE_HELP_CREATE),
+            Messages::get($this->plugin, Messages::MINE_HELP_BLOCK_ADD),
+            Messages::get($this->plugin, Messages::MINE_HELP_BLOCK_REMOVE),
+            Messages::get($this->plugin, Messages::MINE_HELP_BLOCK_LIST),
+            Messages::get($this->plugin, Messages::MINE_HELP_CLEAR),
+            Messages::get($this->plugin, Messages::MINE_HELP_INTERVAL),
+            Messages::get($this->plugin, Messages::MINE_HELP_LABEL),
+            Messages::get($this->plugin, Messages::MINE_HELP_RESET),
+            Messages::get($this->plugin, Messages::MINE_HELP_INFO),
+            Messages::get($this->plugin, Messages::MINE_HELP_LIST)
         ];
 
         $sender->sendMessage(
-            $this->prefixed('§eSkyMineZ mines')
+            $this->prefixed(
+                Messages::get($this->plugin, Messages::MINE_HELP_TITLE)
+            )
         );
 
         foreach (

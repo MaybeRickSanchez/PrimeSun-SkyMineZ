@@ -6,9 +6,10 @@ namespace AM\SkyMineZ\command;
 
 use AM\SkyMineZ\leaderboard\Leaderboard;
 use AM\SkyMineZ\Main;
+use AM\SkyMineZ\config\Messages;
+use AM\SkyMineZ\leaderboard\LeaderboardAdminForm;
 use pocketmine\command\CommandSender;
 use pocketmine\player\Player;
-use pocketmine\world\Position;
 
 /**
  * /lb - creates leaderboards and edits their title and position.
@@ -51,6 +52,7 @@ final class LeaderboardCommand extends BaseCommand
             'title' => $this->handleTitle($sender, $args),
             'setpos' => $this->handleSetPosition($sender, $args),
             'refresh' => $this->handleRefresh($sender),
+            'menu' => $this->handleMenu($sender),
             default => $this->handleHelp($sender)
         };
     }
@@ -77,15 +79,12 @@ final class LeaderboardCommand extends BaseCommand
                 if ($name === null || $type === '') {
                     $this->error(
                         $player,
-                        'Usage: /lb create <name> <type>'
+                        Messages::get($this->plugin, Messages::BOARD_CREATE_USAGE)
                     );
 
                     $player->sendMessage(
                         $this->prefixed(
-                            '§7Types: ' . implode(
-                                ', ',
-                                Leaderboard::getTypes()
-                            )
+                            Messages::get($this->plugin, Messages::BOARD_TYPES, ['types' => implode(', ', Leaderboard::getTypes())])
                         )
                     );
 
@@ -95,11 +94,7 @@ final class LeaderboardCommand extends BaseCommand
                 if (!Leaderboard::isValidType($type)) {
                     $this->error(
                         $player,
-                        "Unknown type '{$type}'. Use one of: "
-                        . implode(
-                            ', ',
-                            Leaderboard::getTypes()
-                        ) . '.'
+                        Messages::get($this->plugin, Messages::BOARD_BAD_TYPE, ['types' => implode(', ', Leaderboard::getTypes())])
                     );
 
                     return;
@@ -132,7 +127,7 @@ final class LeaderboardCommand extends BaseCommand
 
                 $this->success(
                     $player,
-                    "Created leaderboard '{$name}' ({$type})."
+                    Messages::get($this->plugin, Messages::BOARD_CREATED, ['name' => $name])
                 );
             }
         );
@@ -150,7 +145,7 @@ final class LeaderboardCommand extends BaseCommand
         if ($name === null) {
             $this->error(
                 $sender,
-                'Usage: /lb remove <name>'
+                Messages::get($this->plugin, Messages::BOARD_REMOVE_USAGE)
             );
 
             return true;
@@ -163,11 +158,11 @@ final class LeaderboardCommand extends BaseCommand
         $removed
             ? $this->success(
                 $sender,
-                "Removed leaderboard '{$name}'."
+                Messages::get($this->plugin, Messages::BOARD_REMOVED, ['name' => $name])
             )
             : $this->error(
                 $sender,
-                "No leaderboard named '{$name}'."
+                Messages::get($this->plugin, Messages::BOARD_UNKNOWN, ['name' => $name])
             );
 
         return true;
@@ -181,7 +176,7 @@ final class LeaderboardCommand extends BaseCommand
         if ($manager->count() === 0) {
             $this->info(
                 $sender,
-                'No leaderboards are configured.'
+                Messages::get($this->plugin, Messages::BOARD_NONE)
             );
 
             return true;
@@ -189,7 +184,7 @@ final class LeaderboardCommand extends BaseCommand
 
         $sender->sendMessage(
             $this->prefixed(
-                '§eLeaderboards (' . $manager->count() . '):'
+                Messages::get($this->plugin, Messages::BOARD_LIST_TITLE, ['count' => $manager->count()])
             )
         );
 
@@ -200,11 +195,7 @@ final class LeaderboardCommand extends BaseCommand
 
             $sender->sendMessage(
                 $this->prefixed(
-                    '§f' . $name . ' §8| §7' . $leaderboard->getType()
-                    . ' §8| §7' . $leaderboard->getWorld()->getFolderName()
-                    . ' §8(' . $position->getFloorX() . ', '
-                    . $position->getFloorY() . ', '
-                    . $position->getFloorZ() . ')'
+                    Messages::get($this->plugin, Messages::BOARD_LIST_ROW, ['name' => $name, 'type' => $leaderboard->getType(), 'world' => $leaderboard->getWorld()->getFolderName(), 'x' => $position->getFloorX(), 'y' => $position->getFloorY(), 'z' => $position->getFloorZ()])
                 )
             );
         }
@@ -227,29 +218,27 @@ final class LeaderboardCommand extends BaseCommand
 
         $sender->sendMessage(
             $this->prefixed(
-                '§eLeaderboard ' . $leaderboard->getName()
+                Messages::get($this->plugin, Messages::BOARD_INFO_TITLE, ['name' => $leaderboard->getName()])
             )
         );
         $sender->sendMessage(
             $this->prefixed(
-                '§7Type: §f' . $leaderboard->getType()
+                Messages::get($this->plugin, Messages::BOARD_INFO_TYPE, ['type' => $leaderboard->getType()])
             )
         );
         $sender->sendMessage(
             $this->prefixed(
-                '§7Title: §f' . $leaderboard->getTitle()
+                Messages::get($this->plugin, Messages::BOARD_INFO_TITLE_IS, ['title' => $leaderboard->getTitle()])
             )
         );
         $sender->sendMessage(
             $this->prefixed(
-                '§7World: §f' . $leaderboard->getWorld()->getFolderName()
+                Messages::get($this->plugin, Messages::BOARD_INFO_WORLD, ['world' => $leaderboard->getWorld()->getFolderName()])
             )
         );
         $sender->sendMessage(
             $this->prefixed(
-                '§7Position: §f' . $this->format(
-                    $leaderboard->getPosition()
-                )
+                Messages::get($this->plugin, Messages::BOARD_INFO_POS, ['where' => \AM\SkyMineZ\useless\Positions::describe($leaderboard->getPosition())])
             )
         );
 
@@ -272,7 +261,7 @@ final class LeaderboardCommand extends BaseCommand
         if ($name === null || $title === '') {
             $this->error(
                 $sender,
-                'Usage: /lb title <name> <title>'
+                Messages::get($this->plugin, Messages::BOARD_TITLE_USAGE)
             );
 
             return true;
@@ -291,7 +280,7 @@ final class LeaderboardCommand extends BaseCommand
 
         $this->success(
             $sender,
-            'Title updated.'
+            Messages::get($this->plugin, Messages::BOARD_TITLE_SET)
         );
 
         return true;
@@ -330,7 +319,7 @@ final class LeaderboardCommand extends BaseCommand
 
                 $this->success(
                     $player,
-                    'Leaderboard moved to ' . $this->format($position) . '.'
+                    Messages::get($this->plugin, Messages::BOARD_MOVED_TO, ['where' => \AM\SkyMineZ\useless\Positions::describe($position)])
                 );
             }
         );
@@ -343,20 +332,10 @@ final class LeaderboardCommand extends BaseCommand
 
         $this->success(
             $sender,
-            'Refreshed all leaderboards.'
+            Messages::get($this->plugin, Messages::BOARD_REFRESHED_ALL)
         );
 
         return true;
-    }
-
-    private function format(
-        Position $position
-    ): string {
-        return $position->getWorld()->getFolderName()
-            . ' ('
-            . $position->getFloorX() . ', '
-            . $position->getFloorY() . ', '
-            . $position->getFloorZ() . ')';
     }
 
     /**
@@ -373,7 +352,7 @@ final class LeaderboardCommand extends BaseCommand
         if ($leaderboard === null) {
             $this->error(
                 $sender,
-                "No leaderboard named '" . ($name ?? '') . "'."
+                Messages::get($this->plugin, Messages::BOARD_UNKNOWN, ['name' => (string) ($name ?? '')])
             );
 
             return null;
@@ -382,25 +361,38 @@ final class LeaderboardCommand extends BaseCommand
         return $leaderboard;
     }
 
+    private function handleMenu(
+        CommandSender $sender
+    ): bool {
+        if (!$sender instanceof Player) {
+            $this->error($sender, Messages::get($this->plugin, Messages::BOARD_MENU_ONLY));
+
+            return true;
+        }
+
+        (new LeaderboardAdminForm($this->plugin))->send($sender);
+
+        return true;
+    }
+
     private function handleHelp(
         CommandSender $sender
     ): bool {
         $lines = [
-            '§e/lb create <name> <type> [title] §7- create a board where you look',
-            '§7Types: ' . implode(
-                ', ',
-                Leaderboard::getTypes()
-            ),
-            '§e/lb remove <name> §7- delete a board',
-            '§e/lb title <name> <title> §7- change the title',
-            '§e/lb setpos <name> §7- move the board',
-            '§e/lb refresh §7- recompute every board now',
-            '§e/lb info <name> §7- details',
-            '§e/lb list §7- list all boards'
+            Messages::get($this->plugin, Messages::BOARD_HELP_CREATE),
+            Messages::get($this->plugin, Messages::BOARD_HELP_TYPES, ['types' => implode(', ', Leaderboard::getTypes())]),
+            Messages::get($this->plugin, Messages::BOARD_HELP_REMOVE),
+            Messages::get($this->plugin, Messages::BOARD_HELP_TITLE_SET),
+            Messages::get($this->plugin, Messages::BOARD_HELP_SETPOS),
+            Messages::get($this->plugin, Messages::BOARD_HELP_REFRESH),
+            Messages::get($this->plugin, Messages::BOARD_HELP_INFO),
+            Messages::get($this->plugin, Messages::BOARD_HELP_LIST)
         ];
 
         $sender->sendMessage(
-            $this->prefixed('§eSkyMineZ leaderboards')
+            $this->prefixed(
+                Messages::get($this->plugin, Messages::BOARD_HELP_TITLE)
+            )
         );
 
         foreach (

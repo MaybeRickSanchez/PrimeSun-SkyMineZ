@@ -7,10 +7,9 @@ namespace AM\SkyMineZ\miner;
 use AM\SkyMineZ\event\EventDispatcher;
 use AM\SkyMineZ\event\MinerBlockMinedEvent;
 use AM\SkyMineZ\Main;
+use AM\SkyMineZ\useless\Combat;
 use pocketmine\event\Listener;
 use pocketmine\event\block\BlockBreakEvent;
-use pocketmine\event\entity\EntityDamageByChildEntityEvent;
-use pocketmine\event\entity\EntityDamageByEntityEvent;
 use pocketmine\event\player\PlayerDeathEvent;
 use pocketmine\event\player\PlayerJoinEvent;
 use pocketmine\event\player\PlayerQuitEvent;
@@ -53,6 +52,22 @@ final class MinerListener implements Listener
 
         $player = $event->getPlayer();
 
+        if ($player->isCreative()) {
+            return;
+        }
+
+        // Only blocks broken inside a configured mine count towards the
+        // MINED stat. Everything else (lobby, wild, spawn) is ignored so the
+        // sidebar and quests never inflate.
+        if (
+            $this->plugin->getMineManager()->getMineAt(
+                $player->getWorld(),
+                $event->getBlock()->getPosition()
+            ) === null
+        ) {
+            return;
+        }
+
         /*
          * Skip the whole bookkeeping when nobody listens, so the common case
          * costs one static call instead of an object allocation.
@@ -80,6 +95,10 @@ final class MinerListener implements Listener
         );
 
         $miner->addMined($amount);
+
+        // Delta-only refresh so the sidebar shows the new MINED total
+        // immediately instead of waiting for the next 20-tick pass.
+        $this->plugin->getScoreHud()->updatePlayer($player);
     }
 
     public function onDeath(PlayerDeathEvent $event): void
@@ -92,24 +111,17 @@ final class MinerListener implements Listener
         $victimMiner->addDeath();
         $victimMiner->resetKillStreak();
 
-        $damageCause = $victim->getLastDamageCause();
+        /*
+         * The sidebar shows deaths and kill streaks, so refresh it right away
+         * instead of waiting for the next pass. updatePlayer() is delta-only,
+         * so this costs nothing when the board did not actually change.
+         */
+        $this->plugin->getScoreHud()->updatePlayer($victim);
 
-        if ($damageCause instanceof EntityDamageByChildEntityEvent) {
-            $damager = $damageCause->getDamager();
+        $killer = Combat::resolveKiller($victim);
 
-            if ($damager instanceof Player) {
-                $this->registerKill($damager);
-            }
-
-            return;
-        }
-
-        if ($damageCause instanceof EntityDamageByEntityEvent) {
-            $damager = $damageCause->getDamager();
-
-            if ($damager instanceof Player) {
-                $this->registerKill($damager);
-            }
+        if ($killer !== null) {
+            $this->registerKill($killer);
         }
     }
 
@@ -119,5 +131,7 @@ final class MinerListener implements Listener
         $miner = $manager->getOrLoad($player->getName());
 
         $miner->addKill();
+
+        $this->plugin->getScoreHud()->updatePlayer($player);
     }
 }

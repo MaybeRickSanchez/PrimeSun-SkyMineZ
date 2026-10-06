@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace AM\SkyMineZ\pvp;
 
 use AM\SkyMineZ\Main;
+use AM\SkyMineZ\config\Messages;
 use pocketmine\entity\Entity;
 use pocketmine\entity\projectile\Projectile;
 use pocketmine\event\Listener;
@@ -63,6 +64,20 @@ final class PvpListener implements Listener
             return;
         }
 
+        /*
+         * Duel opponents may always fight, regardless of PvP toggles. This is
+         * the compatibility hook between duels and the PvP system: accepting a
+         * duel is explicit consent to this damage.
+         */
+        if (
+            $this->main->getTeamManager()->areOpponents(
+                $attacker->getName(),
+                $victim->getName()
+            )
+        ) {
+            return;
+        }
+
         $manager = $this->main->getPvpManager();
 
         if ($manager->canDamage(
@@ -79,16 +94,27 @@ final class PvpListener implements Listener
         /*
          * Only nag the victim when the attacker is the one who turned PvP off.
          * Being hit by someone who is fine themselves is not confusing.
+         *
+         * The legacy `pvp.disabled-message` key still wins when set, so old
+         * configs keep their custom text; otherwise the shared catalog is
+         * used. Exactly one of the two is read — never both.
          */
         if (
             $manager->getState($attacker->getName())
         ) {
-            $message = $config->message(
-                'pvp.disabled-message',
-                [
-                    'player' => $attacker->getName()
-                ]
-            );
+            $legacy = $config->getString('pvp.disabled-message', '');
+
+            $message = $legacy !== ''
+                ? str_replace(
+                    '{player}',
+                    $attacker->getName(),
+                    $legacy
+                )
+                : Messages::get(
+                    $this->main,
+                    Messages::PVP_OFF,
+                    ['player' => $attacker->getName()]
+                );
 
             if ($message !== '') {
                 $victim->sendMessage(

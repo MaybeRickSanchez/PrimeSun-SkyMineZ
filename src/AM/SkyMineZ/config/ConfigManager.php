@@ -48,11 +48,6 @@ final class ConfigManager
         $this->config->setNested($path, $value);
     }
 
-    public function has(string $path): bool
-    {
-        return $this->config->exists($path, true);
-    }
-
     public function getString(
         string $path,
         string $default = ''
@@ -129,73 +124,9 @@ final class ConfigManager
         return $result;
     }
 
-    /**
-     * Builds a message from the config, applying {placeholders}.
-     *
-     * Unknown placeholders are left untouched so a typo is visible in-game
-     * instead of silently swallowing text.
-     *
-     * @param array<string, string|int|float|bool> $placeholders
-     */
-    public function message(
-        string $path,
-        array $placeholders = []
-    ): string {
-        $template = $this->getString($path);
-
-        if ($template === '') {
-            return '';
-        }
-
-        $search = [];
-        $replace = [];
-
-        foreach ($placeholders as $key => $value) {
-            $search[] = '{' . $key . '}';
-
-            $replace[] = match (true) {
-                is_bool($value) => $value ? 'true' : 'false',
-                is_float($value) => rtrim(
-                    rtrim(
-                        number_format($value, 2, '.', ''),
-                        '0'
-                    ),
-                    '.'
-                ),
-                default => (string) $value
-            };
-        }
-
-        return str_replace(
-            $search,
-            $replace,
-            $template
-        );
-    }
-
     public function getPrefix(): string
     {
         return $this->getString('prefix');
-    }
-
-    /**
-     * Message plus the configured prefix.
-     *
-     * @param array<string, string|int|float|bool> $placeholders
-     */
-    public function prefixed(
-        string $path,
-        array $placeholders = []
-    ): string {
-        return $this->getPrefix() . $this->message(
-            $path,
-            $placeholders
-        );
-    }
-
-    public function getConfig(): Config
-    {
-        return $this->config;
     }
 
     private function load(): Config

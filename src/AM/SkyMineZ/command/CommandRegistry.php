@@ -9,8 +9,10 @@ use AM\SkyMineZ\Main;
 /**
  * Registers every SkyMineZ command with the server.
  *
- * Kept in one place so plugin.yml and the code cannot drift apart: the names
- * below are exactly the labels plugin.yml declares.
+ * Kept in one place so commands cannot drift apart: every command object
+ * carries its own name, description, usage, permission and aliases, and
+ * plugin.yml intentionally declares no command labels (see its note) so no
+ * executor-less PluginCommand can shadow the real implementation.
  */
 final class CommandRegistry
 {
@@ -44,11 +46,20 @@ final class CommandRegistry
     ): array {
         return [
             new SkyMineCommand($plugin),
+            new HubCommand($plugin),
+            new WarpCommand($plugin),
+            new LabelCommand($plugin),
+            new TeamCommand($plugin),
             new CrateCommand($plugin),
             new MineCommand($plugin),
             new OutpostCommand($plugin),
             new SlapperCommand($plugin),
-            new LeaderboardCommand($plugin)
+            new LeaderboardCommand($plugin),
+            new ShopCommand($plugin),
+            new QuestCommand($plugin),
+            new ToolCommand($plugin),
+            new TradeCommand($plugin),
+            new ComposerCommand($plugin)
         ];
     }
 }

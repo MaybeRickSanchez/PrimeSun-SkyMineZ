@@ -28,8 +28,15 @@ final class TextParticle
      * Who the text was last shown to: null means the whole world. Remembered so
      * that a text change re-sends to the same audience instead of leaking a
      * per-player hologram to everybody.
+     *
+     * A global spawn stays global: later per-player top-ups never overwrite
+     * this, otherwise a single join would redirect every future update to one
+     * player and leak the hologram for everyone else.
      */
     private ?Player $audience = null;
+
+    /** @var array<string, true> lower-case names already shown a per-player copy */
+    private array $extraAudiences = [];
 
     public function __construct(
         string $text,
@@ -50,9 +57,14 @@ final class TextParticle
         if ($this->spawned) {
             /*
              * Re-send in place: no despawn/respawn pair, so the client swaps the
-             * text with one packet and no flicker.
+             * text with one packet and no flicker. Global stays global; a
+             * per-player hologram goes back to the same player.
              */
             $this->spawn($this->audience);
+
+            // Per-player top-ups added after a global spawn need the new text
+            // too; they share the same particle text so re-sending globally
+            // already covers them (global addParticle reaches everyone).
         }
     }
 
@@ -63,6 +75,9 @@ final class TextParticle
 
     /**
      * Shows the text to everyone in the world, or to $player only.
+     *
+     * Per-player calls are additive: they never steal a global hologram's
+     * audience. despawn/respawn cycles stay per-audience for the same reason.
      */
     public function spawn(?Player $player = null): void
     {
@@ -74,7 +89,18 @@ final class TextParticle
             $player !== null ? [$player] : null
         );
 
-        $this->audience = $player;
+        if ($player === null) {
+            $this->audience = null;
+            $this->extraAudiences = [];
+        } elseif ($this->audience !== null || !$this->spawned) {
+            // First show (per-player only), or already per-player: remember it.
+            $this->audience = $player;
+        } else {
+            // Global hologram plus one late joiner: remember them so a later
+            // global despawn can hide their copy too, but keep audience global.
+            $this->extraAudiences[strtolower($player->getName())] = true;
+        }
+
         $this->spawned = true;
     }
 
@@ -82,10 +108,30 @@ final class TextParticle
      * Hides the text. The invisible marker has to be broadcast to the same
      * audience the text was shown to, otherwise players who joined afterwards
      * keep seeing a stale hologram.
+     *
+     * Hiding one player never clears a global hologram: only a global despawn
+     * resets the spawned flag.
      */
     public function deSpawn(?Player $player = null): void
     {
         if (!$this->spawned) {
+            return;
+        }
+
+        if ($player !== null && $this->audience === null) {
+            // Hide just this player's copy, keep the global hologram alive.
+            $this->particle->setInvisible();
+
+            $this->world->addParticle(
+                $this->position,
+                $this->particle,
+                [$player]
+            );
+
+            unset($this->extraAudiences[strtolower($player->getName())]);
+
+            $this->particle->setInvisible(false);
+
             return;
         }
 
@@ -98,6 +144,7 @@ final class TextParticle
         );
 
         $this->spawned = false;
+        $this->extraAudiences = [];
     }
 
     public function isSpawned(): bool
@@ -110,13 +157,34 @@ final class TextParticle
         return $this->position;
     }
 
-    public function setPosition(Vector3 $position): void
+    public function setPosition(Vector3 $position, ?World $world = null): void
     {
-        if ($position->equals($this->position)) {
+        $world ??= $this->world;
+
+        if ($position->equals($this->position) && $world === $this->world) {
             return;
         }
 
+        $wasSpawned = $this->spawned;
+        $audience = $this->audience;
+
+        if ($wasSpawned) {
+            // Hide from the old spot before moving, using the same audience
+            // the text was shown to.
+            $this->deSpawn($audience);
+        }
+
         $this->position = $position;
+        $this->world = $world;
+
+        /*
+         * Moving without re-sending would leave the client showing the text at
+         * the old spot, so a spawned particle follows its position the same way
+         * setText() follows its content.
+         */
+        if ($wasSpawned) {
+            $this->spawn($audience);
+        }
     }
 
     public function getWorld(): World

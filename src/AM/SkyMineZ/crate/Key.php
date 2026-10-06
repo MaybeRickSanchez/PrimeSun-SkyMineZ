@@ -78,9 +78,4 @@ final class Key
         return $id !== '' ? $id : null;
     }
 
-    public static function isKey(Item $item): bool
-    {
-        return self::getId($item) !== null;
-    }
-
 }

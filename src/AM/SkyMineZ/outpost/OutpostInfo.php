@@ -62,7 +62,8 @@ final class OutpostInfo
         }
 
         $this->particle->setPosition(
-            $this->computeBasePosition($position)
+            $this->computeBasePosition($position),
+            $position->getWorld()
         );
 
         return $this;

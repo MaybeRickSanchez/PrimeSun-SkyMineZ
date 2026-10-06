@@ -5,16 +5,22 @@ declare(strict_types=1);
 namespace AM\SkyMineZ\crate;
 
 use AM\SkyMineZ\Main;
+use AM\SkyMineZ\config\Messages;
+use AM\SkyMineZ\ui\Ui;
+use AM\SkyMineZ\useless\NumberFormatter;
 use AM\SkyMineZ\event\CrateOpenEvent;
 use AM\SkyMineZ\useless\ReadOnlyInventory;
 use AM\SkyMineZ\useless\TextParticle;
 use InvalidArgumentException;
+use pocketmine\block\DyedShulkerBox;
+use pocketmine\block\tile\ShulkerBox as ShulkerTile;
+use pocketmine\block\utils\DyeColor;
 use pocketmine\block\VanillaBlocks;
-use pocketmine\block\tile\Chest as ChestTile;
 use pocketmine\color\Color;
 use pocketmine\entity\Location;
 use pocketmine\entity\object\ItemEntity;
 use pocketmine\inventory\Inventory;
+use pocketmine\inventory\SimpleInventory;
 use pocketmine\item\Item;
 use pocketmine\player\Player;
 use pocketmine\scheduler\ClosureTask;
@@ -33,6 +39,8 @@ final class Crate
 
     private Position $position;
 
+    private DyeColor $color;
+
     private TextParticle $textParticle;
 
     /**
@@ -46,11 +54,28 @@ final class Crate
     private array $rewards = [];
 
     /**
-     * @var array<int, true>
+     * @var array<string, true> lower-case player names watching a preview
      */
     private array $previewViewers = [];
 
-    private ?int $openingPlayerId = null;
+    /**
+     * The live animation window, if an opening is running. Virtual, like
+     * previews: the real shulker inventory is never shown to anyone, so
+     * hoppers and snoopers can never reach the items on screen.
+     */
+    private ?Inventory $animationInventory = null;
+
+    /**
+     * One preview window per viewing player, keyed by lower-case name.
+     * Name keys (not spl_object_id) can never collide after an object is
+     * freed and its id reused.
+     *
+     * @var array<string, Inventory>
+     */
+    private array $previewWindows = [];
+
+    /** Lower-case name of the player running the animation, if any. */
+    private ?string $openingPlayerId = null;
 
     private ?ItemEntity $floatingItem = null;
 
@@ -62,11 +87,13 @@ final class Crate
         private Main              $main,
         private ReadOnlyInventory $readOnlyInventory,
         string                    $name,
-        Position                  $position
+        Position                  $position,
+        ?DyeColor                 $color = null
     )
     {
         $this->name = $name;
         $this->position = $position;
+        $this->color = $color ?? DyeColor::PURPLE();
 
         $this->textParticle = new TextParticle(
             "§d$name Crate\n" .
@@ -81,19 +108,40 @@ final class Crate
         );
     }
 
+    public function getColor(): DyeColor
+    {
+        return $this->color;
+    }
+
+    public function setColor(
+        DyeColor $color
+    ): self {
+        $this->color = $color;
+
+        $this->spawn();
+
+        return $this;
+    }
+
     public function spawn(): void
     {
         $world = $this->getWorld();
 
+        $block = $world->getBlock($this->position);
+
+        /*
+         * Shulkers do not pair, have no double inventory, and read clearly as
+         * "not a normal chest". Anything else standing here (including a
+         * leftover chest from before the shulker migration, or a shulker in
+         * the wrong color) is replaced.
+         */
         if (
-            !$world->getBlock($this->position)
-                ->hasSameTypeId(
-                    VanillaBlocks::CHEST()
-                )
+            !$block instanceof DyedShulkerBox
+            || $block->getColor() !== $this->color
         ) {
             $world->setBlock(
                 $this->position,
-                VanillaBlocks::CHEST()
+                VanillaBlocks::DYED_SHULKER_BOX()->setColor($this->color)
             );
         }
 
@@ -101,7 +149,7 @@ final class Crate
             $this->position
         );
 
-        if ($tile instanceof ChestTile) {
+        if ($tile instanceof ShulkerTile) {
             $tile->setName(
                 '§5' . $this->name . ' Crate'
             );
@@ -166,14 +214,9 @@ final class Crate
             return;
         }
 
-        if ($this->hasPreviewViewers()) {
-            $this->fillPreview(
-                $inventory
-            );
-
-            return;
-        }
-
+        // The real shulker stays empty: previews and animations run in virtual
+        // windows (showPreview/open). Filling the real container would expose
+        // items to hoppers and other viewers.
         $inventory->clearAll();
     }
 
@@ -366,7 +409,7 @@ final class Crate
             $this->position
         );
 
-        if (!$tile instanceof ChestTile) {
+        if (!$tile instanceof ShulkerTile) {
             return null;
         }
 
@@ -374,44 +417,35 @@ final class Crate
     }
 
     /**
-     * The chest inventory, rebuilding the chest block first when it went
-     * missing. Both preview and opening need this, so it lives here instead of
-     * being copy-pasted into both.
+     * Shows the reward list in a throwaway virtual window.
+     *
+     * Deliberately NOT the real shulker inventory: opening the actual container
+     * is exactly the "chest opens directly" confusion, and it would expose the
+     * rewards to hoppers and to other viewers mid-animation.
      */
-    private function getOrSpawnInventory(): ?Inventory
-    {
-        $inventory = $this->getInventory();
-
-        if ($inventory === null) {
-            $this->spawn();
-
-            $inventory = $this->getInventory();
-        }
-
-        return $inventory;
-    }
-
     public function showPreview(
         Player $player
     ): bool
     {
         if ($this->busy) {
             $player->sendMessage(
-                '§eThis crate is currently opening.'
+                Messages::get($this->main, Messages::CRATE_OPENING)
             );
 
             return false;
         }
 
-        $inventory = $this->getOrSpawnInventory();
+        if ($this->rewards === []) {
+            $player->sendMessage(
+                Messages::get($this->main, Messages::CRATE_NO_PREVIEW)
+            );
 
-        if ($inventory === null) {
             return false;
         }
 
-        $this->fillPreview(
-            $inventory
-        );
+        $inventory = new SimpleInventory(27);
+
+        $this->fillPreview($inventory);
 
         if (
             !$this->readOnlyInventory->open(
@@ -422,9 +456,52 @@ final class Crate
             return false;
         }
 
-        $this->previewViewers[spl_object_id($player)] = true;
+        $playerId = strtolower($player->getName());
+
+        $this->forgetPreview($playerId);
+
+        $this->previewWindows[$playerId] = $inventory;
+        $this->previewViewers[$playerId] = true;
 
         return true;
+    }
+
+    /**
+     * Drops one player's preview window from tracking (and unlocks it),
+     * e.g. when they open a fresh preview or leave.
+     */
+    private function forgetPreview(
+        string $playerId
+    ): void {
+        $inventory = $this->previewWindows[$playerId] ?? null;
+
+        if ($inventory !== null) {
+            $this->readOnlyInventory->remove($inventory);
+
+            unset($this->previewWindows[$playerId]);
+        }
+
+        unset($this->previewViewers[$playerId]);
+    }
+
+    /**
+     * Whether this inventory is a window opened by this crate (the animation
+     * window or any preview). The listener uses it to route close events.
+     */
+    public function isMyWindow(
+        Inventory $inventory
+    ): bool {
+        if ($inventory === $this->animationInventory) {
+            return true;
+        }
+
+        foreach ($this->previewWindows as $preview) {
+            if ($preview === $inventory) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function fillPreview(
@@ -466,7 +543,7 @@ final class Crate
     ): bool {
         if ($this->busy) {
             $player->sendMessage(
-                '§eThis crate is currently opening.'
+                Messages::get($this->main, Messages::CRATE_OPENING)
             );
 
             return false;
@@ -474,7 +551,7 @@ final class Crate
 
         if ($this->hasPreviewViewers()) {
             $player->sendMessage(
-                '§eSomeone is currently viewing this crate.'
+                Messages::get($this->main, Messages::CRATE_SOMEONE_VIEWING)
             );
 
             return false;
@@ -482,17 +559,7 @@ final class Crate
 
         if ($this->rewards === []) {
             $player->sendMessage(
-                '§cThis crate has no rewards.'
-            );
-
-            return false;
-        }
-
-        $inventory = $this->getOrSpawnInventory();
-
-        if ($inventory === null) {
-            $player->sendMessage(
-                '§cThis crate could not be loaded.'
+                Messages::get($this->main, Messages::CRATE_NO_REWARDS)
             );
 
             return false;
@@ -502,7 +569,7 @@ final class Crate
 
         if ($winner === null) {
             $player->sendMessage(
-                '§cNo reward could be selected.'
+                Messages::get($this->main, Messages::CRATE_NO_PICK)
             );
 
             return false;
@@ -526,12 +593,18 @@ final class Crate
 
         $this->busy = true;
 
-        $this->openingPlayerId =
-            spl_object_id($player);
+        $this->openingPlayerId = strtolower($player->getName());
 
         $this->pendingReward = $winner;
 
-        $inventory->clearAll();
+        /*
+         * A fresh virtual window per opening: the real shulker inventory is
+         * never exposed, so hoppers cannot steal the spinning items and two
+         * openings can never share state.
+         */
+        $inventory = new SimpleInventory(27);
+
+        $this->animationInventory = $inventory;
 
         $this->readOnlyInventory->add(
             $inventory
@@ -541,6 +614,7 @@ final class Crate
             $this->busy = false;
             $this->openingPlayerId = null;
             $this->pendingReward = null;
+            $this->animationInventory = null;
 
             $this->readOnlyInventory->remove(
                 $inventory
@@ -586,7 +660,7 @@ final class Crate
             $current += $reward->getWeight();
 
             if ($random < $current) {
-                return $reward;
+                return clone $reward;
             }
         }
 
@@ -614,7 +688,7 @@ final class Crate
         Player $player,
         Reward $winner
     ): void {
-        $inventory = $this->getInventory();
+        $inventory = $this->animationInventory;
 
         if ($inventory === null) {
             $this->finishOpening(
@@ -629,6 +703,10 @@ final class Crate
             ->getConfigManager()
             ->getInt('crates.animation-steps', 36);
 
+        // Snapshot the pacing table once: re-reading config and re-scanning
+        // the delay ranges on every one of the ~36 frames is pure waste.
+        $delays = $this->snapshotAnimationDelays();
+
         $runStep = function (
             int $step
         ) use (
@@ -636,7 +714,8 @@ final class Crate
             $player,
             $winner,
             $inventory,
-            $steps
+            $steps,
+            $delays
         ): void {
             if (!$player->isConnected()) {
                 $this->destroyFloatingItem();
@@ -653,7 +732,7 @@ final class Crate
 
             if (
                 $this->openingPlayerId !==
-                spl_object_id($player)
+                strtolower($player->getName())
             ) {
                 return;
             }
@@ -763,6 +842,7 @@ final class Crate
                         }
                     ),
                     $this->getAnimationDelay(
+                        $delays,
                         $step
                     )
                 );
@@ -777,40 +857,60 @@ final class Crate
      * The table comes from config (`crates.animation-delays`), keyed by the first
      * frame of each range. A frame past the last key reuses that key's delay, so
      * a server with more steps than the default table still looks correct.
+     * Snapshotted once per opening (see playAnimation), not re-read per frame.
+     *
+     * @return list<array{from: int, delay: int}> sorted by `from`
      */
-private function getAnimationDelay(
-        int $step
-    ): int {
+    private function snapshotAnimationDelays(): array
+    {
         $table = $this->main
             ->getConfigManager()
             ->get('crates.animation-delays');
 
         if (!is_array($table) || $table === []) {
-            return 3;
+            return [['from' => 0, 'delay' => 3]];
         }
 
-        $delay = null;
-        $bestFrom = -1;
+        $delays = [];
 
         foreach ($table as $from => $ticks) {
             if (!is_numeric($from) || !is_numeric($ticks)) {
                 continue;
             }
 
-            $from = (int) $from;
-
-            if ($from > $step || $from <= $bestFrom) {
-                continue;
-            }
-
-            $bestFrom = $from;
-            $delay = (int) $ticks;
+            $delays[] = ['from' => (int) $from, 'delay' => max(1, (int) $ticks)];
         }
 
-        return max(
-            1,
-            $delay ?? 3
+        if ($delays === []) {
+            return [['from' => 0, 'delay' => 3]];
+        }
+
+        usort(
+            $delays,
+            static fn(array $a, array $b): int => $a['from'] <=> $b['from']
         );
+
+        return $delays;
+    }
+
+    /**
+     * @param list<array{from: int, delay: int}> $delays
+     */
+    private function getAnimationDelay(
+        array $delays,
+        int $step
+    ): int {
+        $delay = 3;
+
+        foreach ($delays as $entry) {
+            if ($entry['from'] > $step) {
+                break;
+            }
+
+            $delay = $entry['delay'];
+        }
+
+        return max(1, $delay);
     }
 
     private function showFloatingItem(
@@ -981,19 +1081,18 @@ private function getAnimationDelay(
         Player $player,
         Reward $winner
     ): void {
-        $inventory = $this->getInventory();
+        $inventory = $this->animationInventory;
 
         $this->destroyFloatingItem();
 
         $this->busy = false;
         $this->openingPlayerId = null;
         $this->pendingReward = null;
+        $this->animationInventory = null;
 
         if ($inventory !== null) {
             $this->readOnlyInventory
                 ->remove($inventory);
-
-            $inventory->clearAll();
 
             if (
                 $player->getCurrentWindow() ===
@@ -1019,44 +1118,52 @@ private function getAnimationDelay(
             $player->dropItem($leftover);
         }
 
-        $player->sendMessage(
-            '§dCrate Reward: §f' . $item->getName()
+        $this->showReward($player, $winner);
+    }
+
+    /**
+     * The result screen: what was won and how rare it is. A form rather than
+     * chat spam, so the moment reads as a moment.
+     */
+    private function showReward(
+        Player $player,
+        Reward $winner
+    ): void {
+        $item = $winner->getItem();
+        $chance = $winner->getChancePercent($this->getTotalWeight());
+
+        Ui::menu(
+            $this->main,
+            $player,
+            $this->name . ' crate',
+            "§dCrate Reward: §f" . $item->getName()
+            . "\n§7Rarity: §f" . $winner->getType()
+            . ' §8| §7Chance: §f' . NumberFormatter::trim($chance) . '%',
+            ['§aNice!' => static function(): void {
+            }]
         );
     }
 
+    /**
+     * Routes a closed window: preview closes just release the lock, while the
+     * animation window is forced back open so the spin cannot be skipped.
+     * The closed inventory arrives from the listener, which matched it with
+     * {@link isMyWindow()} first.
+     */
     public function handleClose(
-        Player $player
+        Player $player,
+        Inventory $inventory
     ): void
     {
-        $playerId = spl_object_id(
-            $player
-        );
+        $playerId = strtolower($player->getName());
 
         if (
-            isset(
+            $inventory !== $this->animationInventory
+            && isset(
                 $this->previewViewers[$playerId]
             )
         ) {
-            unset(
-                $this->previewViewers[$playerId]
-            );
-
-            if (
-                !$this->busy &&
-                $this->previewViewers === []
-            ) {
-                $inventory =
-                    $this->getInventory();
-
-                if ($inventory !== null) {
-                    $inventory->clearAll();
-
-                    $this->readOnlyInventory
-                        ->remove(
-                            $inventory
-                        );
-                }
-            }
+            $this->forgetPreview($playerId);
 
             return;
         }
@@ -1064,14 +1171,9 @@ private function getAnimationDelay(
         if (
             !$this->busy ||
             $this->openingPlayerId !==
-            $playerId
+            $playerId ||
+            $inventory !== $this->animationInventory
         ) {
-            return;
-        }
-
-        $inventory = $this->getInventory();
-
-        if ($inventory === null) {
             return;
         }
 
@@ -1099,9 +1201,14 @@ private function getAnimationDelay(
                             return;
                         }
 
-                        $player->setCurrentWindow(
-                            $inventory
-                        );
+                        // ReadOnlyInventory auto-removed this window on close
+                        // (MONITOR), so re-arm it before reopening or the
+                        // spin items become stealable.
+                        $this->readOnlyInventory->add($inventory);
+
+                        if (!$player->setCurrentWindow($inventory)) {
+                            $this->readOnlyInventory->remove($inventory);
+                        }
                     }
                 ),
                 1
@@ -1112,9 +1219,7 @@ private function getAnimationDelay(
         Player $player
     ): void
     {
-        $playerId = spl_object_id(
-            $player
-        );
+        $playerId = strtolower($player->getName());
 
         if (
             $this->openingPlayerId ===
@@ -1129,14 +1234,13 @@ private function getAnimationDelay(
             $this->openingPlayerId = null;
             $this->pendingReward = null;
 
-            $inventory =
-                $this->getInventory();
+            $inventory = $this->animationInventory;
+
+            $this->animationInventory = null;
 
             if ($inventory !== null) {
                 $this->readOnlyInventory
                     ->remove($inventory);
-
-                $inventory->clearAll();
             }
 
             if ($reward !== null) {
@@ -1153,32 +1257,7 @@ private function getAnimationDelay(
             return;
         }
 
-        if (
-            isset(
-                $this->previewViewers[$playerId]
-            )
-        ) {
-            unset(
-                $this->previewViewers[$playerId]
-            );
-
-            if (
-                $this->previewViewers === [] &&
-                !$this->busy
-            ) {
-                $inventory =
-                    $this->getInventory();
-
-                if ($inventory !== null) {
-                    $inventory->clearAll();
-
-                    $this->readOnlyInventory
-                        ->remove(
-                            $inventory
-                        );
-                }
-            }
-        }
+        $this->forgetPreview($playerId);
     }
 
     public function save(): void
@@ -1191,11 +1270,44 @@ private function getAnimationDelay(
     }
 
     /**
+     * @return list<string> every usable color name, for help text
+     */
+    public static function colorNames(): array
+    {
+        $names = [];
+
+        foreach (DyeColor::cases() as $case) {
+            $names[] = strtolower($case->name);
+        }
+
+        return $names;
+    }
+
+    /**
+     * Resolves a color name typed by an admin ("purple", "red", ...) to a dye
+     * color, case-insensitively. Returns null for unknown names.
+     */
+    public static function colorFromName(
+        string $name
+    ): ?DyeColor {
+        $name = strtoupper(trim($name));
+
+        foreach (DyeColor::cases() as $case) {
+            if ($case->name === $name) {
+                return $case;
+            }
+        }
+
+        return null;
+    }
+
+    /**
      * @return array{
      *     world: string,
      *     x: float,
      *     y: float,
      *     z: float,
+     *     color: string,
      *     keys: list<string>,
      *     rewards: list<array{item: string, weight: float, type: string}>
      * }
@@ -1209,6 +1321,8 @@ private function getAnimationDelay(
             'x' => (float) $this->position->x,
             'y' => (float) $this->position->y,
             'z' => (float) $this->position->z,
+
+            'color' => strtolower($this->color->name),
 
             'keys' => $this->getKeys(),
 

@@ -47,6 +47,8 @@ final class SlapperManager
 
     private Config $db;
 
+    private SlapperLookTask $lookTask;
+
     public function __construct(
         private Main $main
     ) {
@@ -54,6 +56,17 @@ final class SlapperManager
             $this->main->getDataFolder() .
             'slappers.json',
             Config::JSON
+        );
+
+        $this->lookTask = new SlapperLookTask($this);
+
+        /*
+         * One repeating task for all slappers. Plugin tasks die with the
+         * scheduler on disable, so no manual cancellation is needed.
+         */
+        $this->main->getScheduler()->scheduleRepeatingTask(
+            $this->lookTask,
+            SlapperLookTask::INTERVAL
         );
     }
 
@@ -296,10 +309,16 @@ if (
             );
         }
 
-        $skin =
-            $skin instanceof Player
-                ? $skin->getSkin()
-                : $skin;
+        if ($skin instanceof Player) {
+            $creatorLoc = $skin->getLocation();
+
+            $yaw = $creatorLoc->getYaw();
+            $pitch = $creatorLoc->getPitch();
+            $skin = $skin->getSkin();
+        } else {
+            $yaw = 0.0;
+            $pitch = 0.0;
+        }
 
         $location =
             new \pocketmine\entity\Location(
@@ -307,8 +326,8 @@ if (
                 $position->y,
                 $position->z,
                 $position->getWorld(),
-                0,
-                0
+                $yaw,
+                $pitch
             );
 
         $slapper = new Slapper(
@@ -607,6 +626,10 @@ if (
     public function getBlockAt(
         Vector3 $position
     ): ?SlapperBlock {
+        if (!$position instanceof Position) {
+            return null;
+        }
+
         $name = $this->blockIndex[self::positionKey(
             $position
         )] ?? null;
@@ -639,6 +662,8 @@ if (
         $this->forgetEntity($slapper);
 
         $slapper->despawn();
+
+        $this->lookTask->forget($name);
 
         unset(
             $this->slappers[$name]
@@ -814,16 +839,13 @@ if (
 
     /**
      * Position index key. Uses the world *folder* name because that is what is
-     * stored on disk and stays stable across restarts.
+     * stored on disk and stays stable across restarts. Requires a Position:
+     * a plain Vector3 has no world and would collide across worlds under '?'.
      */
     private static function positionKey(
-        Vector3 $position
+        Position $position
     ): string {
-        $world = $position instanceof Position
-            ? $position->getWorld()
-            : null;
-
-        return ($world?->getFolderName() ?? '?')
+        return $position->getWorld()->getFolderName()
             . ':'
             . $position->getFloorX()
             . ':'

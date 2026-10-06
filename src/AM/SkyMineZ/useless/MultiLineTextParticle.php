@@ -32,6 +32,9 @@ final class MultiLineTextParticle
 
     private bool $spawned = false;
 
+    /** @var array<string, true> lower-case names with a per-player copy */
+    private array $playerSpawns = [];
+
     /**
      * @param list<string> $lines
      */
@@ -72,19 +75,19 @@ final class MultiLineTextParticle
             return;
         }
 
-        $count = count($this->texts);
+        // Pad missing lines with "" so setLine(3) on an empty stack creates
+        // lines 0-2 as blanks instead of collapsing onto index 0.
+        while (count($this->texts) < $id) {
+            $this->texts[] = '';
+        }
 
         $this->texts[$id] = $text;
 
         ksort($this->texts);
 
-        $this->repack();
+        $this->texts = array_values($this->texts);
 
-        /*
-         * repack() closes gaps, so an out-of-range id lands on the last slot;
-         * anything else keeps its index.
-         */
-        $index = $id < $count ? $id : $count;
+        $index = $id;
 
         /*
          * Line objects outlive a despawn, so their existence — not the spawned
@@ -100,6 +103,7 @@ final class MultiLineTextParticle
 
             $this->lines[$index] = $line;
         }
+        // Not spawned yet: nothing to send, texts[] already holds it.
     }
 
     /**
@@ -175,20 +179,36 @@ final class MultiLineTextParticle
                 $this->lines[$id]->spawn($player);
             }
 
+            $this->playerSpawns[strtolower($player->getName())] = true;
+
             return;
         }
 
+        $this->playerSpawns = [];
         $this->rebuild();
     }
 
-    public function deSpawn(): void
+    public function deSpawn(?Player $player = null): void
     {
+        if ($player !== null) {
+            foreach (
+                $this->lines as $line
+            ) {
+                $line->deSpawn($player);
+            }
+
+            unset($this->playerSpawns[strtolower($player->getName())]);
+
+            return;
+        }
+
         foreach (
             $this->lines as $line
         ) {
             $line->deSpawn();
         }
 
+        $this->playerSpawns = [];
         $this->spawned = false;
     }
 
@@ -198,12 +218,33 @@ final class MultiLineTextParticle
     }
 
     public function setPosition(
-        Vector3 $position
+        Vector3 $position,
+        ?World $world = null
     ): void {
+        $world ??= $this->world;
+
+        if ($position->equals($this->basePosition) && $world === $this->world) {
+            return;
+        }
+
         $this->basePosition = $position;
+        $this->world = $world;
 
         if ($this->spawned) {
             $this->rebuild();
+        } else {
+            // Move unspawned line objects too so a later spawn uses the new
+            // spot; per-player lines follow as well.
+            foreach ($this->lines as $id => $line) {
+                $line->setPosition(
+                    new Vector3(
+                        $position->x,
+                        $position->y - ($id * self::LINE_SPACING),
+                        $position->z
+                    ),
+                    $world
+                );
+            }
         }
     }
 
@@ -225,25 +266,6 @@ final class MultiLineTextParticle
         return array_values(
             $this->texts
         );
-    }
-
-    /**
-     * Closes gaps left by out-of-range setLine() calls so line indexes stay
-     * consecutive.
-     */
-    private function repack(): void
-    {
-        $this->texts = array_values(
-            $this->texts
-        );
-    }
-
-    /**
-     * @return array<int, TextParticle>
-     */
-    public function getParticles(): array
-    {
-        return $this->lines;
     }
 
     private function rebuild(): void

@@ -5,8 +5,11 @@ declare(strict_types=1);
 namespace AM\SkyMineZ\command;
 
 use AM\SkyMineZ\Main;
+use AM\SkyMineZ\config\Messages;
+use AM\SkyMineZ\outpost\OutpostAdminForm;
 use AM\SkyMineZ\outpost\Outpost;
 use AM\SkyMineZ\useless\NumberFormatter;
+use AM\SkyMineZ\useless\Positions;
 use pocketmine\command\CommandSender;
 use pocketmine\player\Player;
 
@@ -50,6 +53,8 @@ final class OutpostCommand extends BaseCommand
             'info' => $this->handleInfo($sender, $args),
             'owner' => $this->handleOwner($sender, $args),
             'reset' => $this->handleReset($sender, $args),
+            'menu' => $this->handleMenu($sender),
+            'setlabel' => $this->handleSetLabel($sender, $args),
             default => $this->handleHelp($sender)
         };
     }
@@ -73,8 +78,7 @@ final class OutpostCommand extends BaseCommand
                 if ($name === null || !self::isValidName($name)) {
                     $this->error(
                         $player,
-                        'Usage: /outpost create <name>  '
-                        . '(letters, digits, underscore and dash only)'
+                        Messages::get($this->plugin, Messages::OUTPOST_CREATE_USAGE)
                     );
 
                     return;
@@ -86,7 +90,7 @@ final class OutpostCommand extends BaseCommand
                 if ($region === null) {
                     $this->error(
                         $player,
-                        'Select the region first: /skymine pos1 and /skymine pos2.'
+                        Messages::get($this->plugin, Messages::COMMON_SELECT_REGION)
                     );
 
                     return;
@@ -111,9 +115,7 @@ final class OutpostCommand extends BaseCommand
 
                 $this->success(
                     $player,
-                    "Created outpost '{$name}' capturing in "
-                    . $outpost->getInfo()->getPosition()?->getWorld()->getFolderName()
-                    . '.'
+                    Messages::get($this->plugin, Messages::OUTPOST_CREATED, ['name' => $name, 'world' => $outpost->getInfo()->getPosition()?->getWorld()->getFolderName() ?? '?'])
                 );
             }
         );
@@ -131,7 +133,7 @@ final class OutpostCommand extends BaseCommand
         if ($name === null) {
             $this->error(
                 $sender,
-                'Usage: /outpost remove <name>'
+                Messages::get($this->plugin, Messages::OUTPOST_REMOVE_USAGE)
             );
 
             return true;
@@ -144,11 +146,11 @@ final class OutpostCommand extends BaseCommand
         $removed
             ? $this->success(
                 $sender,
-                "Removed outpost '{$name}'."
+                Messages::get($this->plugin, Messages::OUTPOST_REMOVED, ['name' => $name])
             )
             : $this->error(
                 $sender,
-                "No outpost named '{$name}'."
+                Messages::get($this->plugin, Messages::OUTPOST_UNKNOWN, ['name' => $name])
             );
 
         return true;
@@ -162,7 +164,7 @@ final class OutpostCommand extends BaseCommand
         if ($manager->count() === 0) {
             $this->info(
                 $sender,
-                'No outposts are configured.'
+                Messages::get($this->plugin, Messages::OUTPOST_NONE)
             );
 
             return true;
@@ -170,7 +172,7 @@ final class OutpostCommand extends BaseCommand
 
         $sender->sendMessage(
             $this->prefixed(
-                '§eOutposts (' . $manager->count() . '):'
+                Messages::get($this->plugin, Messages::OUTPOST_LIST_TITLE, ['count' => $manager->count()])
             )
         );
 
@@ -179,14 +181,13 @@ final class OutpostCommand extends BaseCommand
         ) {
             $sender->sendMessage(
                 $this->prefixed(
-                    '§f' . $name . ' §8| §7'
-                    . $outpost->getWorld()->getFolderName()
-                    . ' §8| §7owner §f'
-                    . ($outpost->getOwner() ?? 'none')
-                    . ' §8| §7'
-                    . ($outpost->isCapturable()
-                        ? '§acapturable'
-                        : '§clocked')
+                    Messages::get($this->plugin, Messages::OUTPOST_LIST_ROW,
+                        [
+                            'name' => $name,
+                            'world' => $outpost->getWorld()->getFolderName(),
+                            'owner' => $outpost->getOwner() ?? 'none',
+                            'state' => $outpost->isCapturable() ? '§acapturable' : '§clocked'
+                        ])
                 )
             );
         }
@@ -209,28 +210,27 @@ final class OutpostCommand extends BaseCommand
 
         $sender->sendMessage(
             $this->prefixed(
-                '§eOutpost ' . $outpost->getName()
+                Messages::get($this->plugin, Messages::OUTPOST_INFO_TITLE, ['name' => $outpost->getName()])
             )
         );
         $sender->sendMessage(
             $this->prefixed(
-                '§7World: §f' . $outpost->getWorld()->getFolderName()
+                Messages::get($this->plugin, Messages::OUTPOST_INFO_WORLD, ['world' => $outpost->getWorld()->getFolderName()])
             )
         );
         $sender->sendMessage(
             $this->prefixed(
-                '§7State: §f' . $outpost->getState()
+                Messages::get($this->plugin, Messages::OUTPOST_INFO_STATE, ['state' => $outpost->getState()])
             )
         );
         $sender->sendMessage(
             $this->prefixed(
-                '§7Owner: §f' . ($outpost->getOwner() ?? 'none')
+                Messages::get($this->plugin, Messages::OUTPOST_INFO_OWNER, ['owner' => $outpost->getOwner() ?? 'none'])
             )
         );
         $sender->sendMessage(
             $this->prefixed(
-                '§7Progress: §f' . $outpost->getProgress()
-                . '/' . $outpost->getCaptureRequired()
+                Messages::get($this->plugin, Messages::OUTPOST_INFO_PROGRESS, ['progress' => $outpost->getProgress(), 'required' => $outpost->getCaptureRequired()])
             )
         );
 
@@ -239,10 +239,7 @@ final class OutpostCommand extends BaseCommand
         if ($availableAt > time()) {
             $sender->sendMessage(
                 $this->prefixed(
-                    '§7Unlocks in: §e'
-                    . NumberFormatter::duration(
-                        $availableAt - time()
-                    )
+                    Messages::get($this->plugin, Messages::OUTPOST_INFO_UNLOCKS, ['in' => NumberFormatter::duration($availableAt - time())])
                 )
             );
         }
@@ -254,7 +251,7 @@ final class OutpostCommand extends BaseCommand
         if ($owned !== []) {
             $sender->sendMessage(
                 $this->prefixed(
-                    '§7Owned outposts: §f' . count($owned)
+                    Messages::get($this->plugin, Messages::OUTPOST_INFO_OWNED, ['count' => count($owned)])
                 )
             );
         }
@@ -280,7 +277,7 @@ final class OutpostCommand extends BaseCommand
         if ($playerName === null) {
             $this->error(
                 $sender,
-                'Usage: /outpost owner <name> <player|clear>'
+                Messages::get($this->plugin, Messages::OUTPOST_OWNER_USAGE)
             );
 
             return true;
@@ -303,7 +300,7 @@ final class OutpostCommand extends BaseCommand
 
         $this->success(
             $sender,
-            'Owner set to ' . ($outpost->getOwner() ?? 'none') . '.'
+            Messages::get($this->plugin, Messages::OUTPOST_OWNER_SET, ['owner' => $outpost->getOwner() ?? 'none'])
         );
 
         return true;
@@ -336,7 +333,7 @@ final class OutpostCommand extends BaseCommand
 
         $this->success(
             $sender,
-            'Outpost unlocked and progress cleared.'
+            Messages::get($this->plugin, Messages::OUTPOST_UNLOCKED)
         );
 
         return true;
@@ -356,7 +353,7 @@ final class OutpostCommand extends BaseCommand
         if ($outpost === null) {
             $this->error(
                 $sender,
-                "No outpost named '" . ($name ?? '') . "'."
+                Messages::get($this->plugin, Messages::OUTPOST_UNKNOWN, ['name' => (string) ($name ?? '')])
             );
 
             return null;
@@ -365,20 +362,75 @@ final class OutpostCommand extends BaseCommand
         return $outpost;
     }
 
+    /**
+     * @param list<string> $args
+     */
+    private function handleSetLabel(
+        CommandSender $sender,
+        array $args
+    ): bool {
+        return $this->runPlayerSubCommand(
+            $sender,
+            $args,
+            function(
+                Player $player,
+                array $args
+            ): void {
+                $outpost = $this->resolveOutpost($player, $args[1] ?? null);
+
+                if ($outpost === null) {
+                    return;
+                }
+
+                $position = TargetResolver::lookedAtPosition($player)
+                    ?? Positions::above($player->getPosition(), 2.0);
+
+                $outpost->setLabelPosition($position);
+                $outpost->spawn();
+
+                $this->plugin->getOutpostManager()->save(
+                    $outpost->getName()
+                );
+
+                $this->success(
+                    $player,
+                    Messages::get($this->plugin, Messages::OUTPOST_LABEL_MOVED, ['name' => $outpost->getName()])
+                );
+            }
+        );
+    }
+
+    private function handleMenu(
+        CommandSender $sender
+    ): bool {
+        if (!$sender instanceof Player) {
+            $this->error($sender, Messages::get($this->plugin, Messages::OUTPOST_MENU_ONLY));
+
+            return true;
+        }
+
+        (new OutpostAdminForm($this->plugin))->send($sender);
+
+        return true;
+    }
+
     private function handleHelp(
         CommandSender $sender
     ): bool {
         $lines = [
-            '§e/outpost create <name> §7- create an outpost from the pos1/pos2 selection',
-            '§e/outpost remove <name> §7- delete an outpost',
-            '§e/outpost owner <name> <player|clear> §7- force the owner',
-            '§e/outpost reset <name> §7- unlock it and clear progress',
-            '§e/outpost info <name> §7- details',
-            '§e/outpost list §7- list all outposts'
+            Messages::get($this->plugin, Messages::OUTPOST_HELP_CREATE),
+            Messages::get($this->plugin, Messages::OUTPOST_HELP_REMOVE),
+            Messages::get($this->plugin, Messages::OUTPOST_HELP_OWNER),
+            Messages::get($this->plugin, Messages::OUTPOST_HELP_RESET),
+            Messages::get($this->plugin, Messages::OUTPOST_HELP_SETLABEL),
+            Messages::get($this->plugin, Messages::OUTPOST_HELP_INFO),
+            Messages::get($this->plugin, Messages::OUTPOST_HELP_LIST)
         ];
 
         $sender->sendMessage(
-            $this->prefixed('§eSkyMineZ outposts')
+            $this->prefixed(
+                Messages::get($this->plugin, Messages::OUTPOST_HELP_TITLE)
+            )
         );
 
         foreach (

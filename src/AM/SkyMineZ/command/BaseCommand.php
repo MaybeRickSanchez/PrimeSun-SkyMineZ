@@ -53,7 +53,7 @@ abstract class BaseCommand extends Command
         if (!$sender instanceof Player) {
             $sender->sendMessage(
                 $this->prefixed(
-                    '§cThis command can only be used in-game.'
+                    \AM\SkyMineZ\config\Messages::get($this->plugin, \AM\SkyMineZ\config\Messages::COMMON_IN_GAME_ONLY)
                 )
             );
 
@@ -121,12 +121,6 @@ abstract class BaseCommand extends Command
     }
 
     /**
-     * Reads the rest of the argument list as one string, for messages and
-     * commands with spaces in them.
-     *
-     * @param list<string> $args
-     */
-    /**
      * Registry names (crates, mines, outposts, slappers): letters, digits,
      * underscore and dash, 1-32 chars. One canonical rule so a name accepted
      * by one command is never rejected by another.
@@ -154,15 +148,5 @@ abstract class BaseCommand extends Command
                 $from
             )
         );
-    }
-
-    /**
-     * Positional selection marker, either the block the sender is looking at or
-     * the block they stand on. Every "click a block" command accepts both.
-     */
-    protected function targetBlock(
-        Player $player
-    ): \pocketmine\world\Position {
-        return $player->getPosition();
     }
 }

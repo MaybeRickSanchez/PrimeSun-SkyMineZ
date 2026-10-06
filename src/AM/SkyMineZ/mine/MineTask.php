@@ -7,11 +7,12 @@ namespace AM\SkyMineZ\mine;
 use pocketmine\scheduler\Task;
 
 /**
- * Drives the automatic mine resets and the once-per-second hologram refresh.
+ * Drives the automatic mine resets and the hologram countdown refresh.
  *
- * A single repeating task covers both: it counts down to the next due mine and
- * re-arms itself implicitly, which is cheaper than polling every mine on its own
- * timer and guarantees the mines cannot drift apart.
+ * A single repeating task covers both: it checks for due refills and refreshes
+ * every countdown once per second. Refreshing every second (not every 20) is
+ * what keeps the label and the actual reset timer from drifting apart; the
+ * refresh itself is cheap because holograms only re-send changed lines.
  *
  * The actual refill is not done here. {@link Mine::reset()} hands the writing to
  * {@link MineFillTask}, so this task only ever decides *when*.
@@ -19,10 +20,6 @@ use pocketmine\scheduler\Task;
 final class MineTask extends Task
 {
     public const TICK_INTERVAL = 20;
-
-    private const HOLOGRAM_INTERVAL = 20;
-
-    private int $ticksSinceHologram = self::HOLOGRAM_INTERVAL;
 
     public function __construct(
         private MineManager $manager
@@ -32,11 +29,6 @@ final class MineTask extends Task
     public function onRun(): void
     {
         $this->manager->onTick();
-
-        if (--$this->ticksSinceHologram <= 0) {
-            $this->ticksSinceHologram = self::HOLOGRAM_INTERVAL;
-
-            $this->manager->tickHolograms();
-        }
+        $this->manager->tickHolograms();
     }
 }

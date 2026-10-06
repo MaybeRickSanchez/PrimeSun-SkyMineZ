@@ -17,11 +17,6 @@ final class Miner
         return $this->playerName;
     }
 
-    public function getStates(): MinerStates
-    {
-        return $this->states;
-    }
-
     public function getMined(): int
     {
         return $this->states->getMined();

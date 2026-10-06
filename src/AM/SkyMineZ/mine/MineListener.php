@@ -10,14 +10,12 @@ use pocketmine\event\block\BlockBreakEvent;
 use pocketmine\event\block\BlockPlaceEvent;
 use pocketmine\event\player\PlayerJoinEvent;
 use pocketmine\math\Vector3;
-use pocketmine\world\Position;
 
 /**
- * Keeps mines from being griefed and shows their holograms to joining players.
- *
- * Inside a mine box only the refill itself may write blocks, so breaking and
- * placing are always refused there; players are meant to break the mine with
- * /mine reset, which restarts the timer as well.
+ * Mining inside mines is the core loop: breaks are allowed, and the block's
+ * resource goes straight into the breaker's inventory instead of scattering
+ * across the floor (see "mine block rewards"). Placement stays forbidden so
+ * mines cannot be griefed or sealed.
  */
 final class MineListener implements Listener
 {
@@ -36,11 +34,55 @@ final class MineListener implements Listener
     public function onBreak(
         BlockBreakEvent $event
     ): void {
-        if ($this->isMineBlock(
-            $event->getBlock()
-                ->getPosition()
-        )) {
-            $event->cancel();
+        if ($event->isCancelled()) {
+            return;
+        }
+
+        $player = $event->getPlayer();
+
+        if ($player->isCreative()) {
+            return;
+        }
+
+        $block = $event->getBlock();
+
+        $mine = $this->main->getMineManager()->getMineAt(
+            $player->getWorld(),
+            $block->getPosition()
+        );
+
+        if ($mine === null) {
+            return;
+        }
+
+        $drops = $block->getDrops(
+            $player->getInventory()->getItemInHand()
+        );
+
+        if ($drops === []) {
+            return;
+        }
+
+        /*
+         * Suppress the world drop first: the items below are the same drops
+         * handed over directly, so this can neither duplicate nor lose them.
+         */
+        $event->setDrops([]);
+
+        $inventory = $player->getInventory();
+
+        foreach ($drops as $drop) {
+            if ($drop->isNull()) {
+                continue;
+            }
+
+            foreach ($inventory->addItem($drop) as $leftover) {
+                $player->getWorld()->dropItem(
+                    $player->getPosition(),
+                    $leftover,
+                    new Vector3(0, 0, 0)
+                );
+            }
         }
     }
 
@@ -56,18 +98,28 @@ final class MineListener implements Listener
         $player = $event->getPlayer();
         $world = $player->getWorld();
 
-        foreach (
-            $event->getTransaction()->getBlocks() as [$x, $y, $z]
-        ) {
+        foreach ($event->getTransaction()->getBlocks() as $entry) {
+            // PM 5.x yields [x, y, z, Block]; tolerate any tuple shape so a
+            // core change can never fatal here.
+            if (!is_array($entry) || count($entry) < 3) {
+                continue;
+            }
+
+            [$x, $y, $z] = [$entry[0], $entry[1], $entry[2]];
+
+            if (!is_numeric($x) || !is_numeric($y) || !is_numeric($z)) {
+                continue;
+            }
+
             if (
                 $this->main
                     ->getMineManager()
                     ->getMineAt(
                         $world,
                         new Vector3(
-                            $x,
-                            $y,
-                            $z
+                            (float) $x,
+                            (float) $y,
+                            (float) $z
                         )
                     ) !== null
             ) {
@@ -78,14 +130,4 @@ final class MineListener implements Listener
         }
     }
 
-    private function isMineBlock(
-        Position $position
-    ): bool {
-        return $this->main
-            ->getMineManager()
-            ->getMineAt(
-                $position->getWorld(),
-                $position
-            ) !== null;
-    }
 }

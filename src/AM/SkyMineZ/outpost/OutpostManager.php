@@ -6,6 +6,7 @@ namespace AM\SkyMineZ\outpost;
 
 use AM\SkyMineZ\economy\EconomyChangeEventReason;
 use AM\SkyMineZ\economy\GoldEconomy;
+use AM\SkyMineZ\config\Messages;
 use AM\SkyMineZ\Main;
 use AM\SkyMineZ\useless\Arrays;
 use AM\SkyMineZ\useless\SpreadTask;
@@ -269,7 +270,7 @@ final class OutpostManager
             $previousOwner = $outpost->getOwner();
             $previousState = $outpost->getState();
 
-            $outpost->tick(
+            $changed = $outpost->tick(
                 $now,
                 $captureMin,
                 $captureMax
@@ -287,11 +288,15 @@ final class OutpostManager
                     $outpost,
                     $previousOwner
                 );
-
-                $this->save((string) $name);
             }
 
-            $this->handleGold($outpost, $now);
+            $goldPaid = $this->handleGold($outpost, $now);
+
+            // Persist state changes (cooldown expiry, capture, gold timer)
+            // so a crash never double-pays or resets timers.
+            if ($changed || $goldPaid || $outpost->getOwner() !== $previousOwner) {
+                $this->save((string) $name);
+            }
         }
     }
 
@@ -361,8 +366,11 @@ final class OutpostManager
         }
 
         $this->main->getServer()->broadcastMessage(
-            "§a+ §eThe outpost §6" . $outpost->getName()
-            . " §ais capturable again!"
+            Messages::get(
+                $this->main,
+                Messages::OUTPOST_OPEN,
+                ['name' => $outpost->getName()]
+            )
         );
     }
 
@@ -378,37 +386,46 @@ final class OutpostManager
 
         if ($previousOwner === null) {
             $this->main->getServer()->broadcastMessage(
-                "§6+ §e" . $owner . " §6has captured the outpost §e"
-                . $outpost->getName() . "§6!"
+                Messages::get(
+                    $this->main,
+                    Messages::OUTPOST_CAPTURED,
+                    ['player' => $owner, 'name' => $outpost->getName()]
+                )
             );
 
             return;
         }
 
         $this->main->getServer()->broadcastMessage(
-            "§6+ §e" . $owner . " §6has taken the outpost §e"
-            . $outpost->getName() . " §6from §e"
-            . $previousOwner . "§6!"
+            Messages::get(
+                $this->main,
+                Messages::OUTPOST_TAKEN,
+                [
+                    'player' => $owner,
+                    'name' => $outpost->getName(),
+                    'previous' => $previousOwner
+                ]
+            )
         );
     }
 
     private function handleGold(
         Outpost $outpost,
         int $now
-    ): void {
+    ): bool {
         $owner = $outpost->getOwner();
 
         if (
             $owner === null
             || !$outpost->isGoldDue($now)
         ) {
-            return;
+            return false;
         }
 
         $reward = $outpost->getGoldReward();
 
         if ($reward <= 0) {
-            return;
+            return false;
         }
 
         $this->goldEconomy->add(
@@ -422,10 +439,14 @@ final class OutpostManager
         );
 
         $player?->sendMessage(
-            "§6+ You received §e" . $reward
-            . " §6gold from the outpost §e"
-            . $outpost->getName() . "§6!"
+            Messages::get(
+                $this->main,
+                Messages::OUTPOST_GOLD,
+                ['reward' => $reward, 'name' => $outpost->getName()]
+            )
         );
+
+        return true;
     }
 
     /**
@@ -497,6 +518,31 @@ final class OutpostManager
                 ? (int) $data['lastGoldAt']
                 : 0
         );
+
+        $label = $data['label'] ?? null;
+
+        if (is_array($label)) {
+            $labelWorld = isset($label[0]) && is_string($label[0])
+                ? Worlds::resolve($worldManager, $label[0])
+                : null;
+
+            if (
+                $labelWorld !== null
+                && isset($label[1], $label[2], $label[3])
+                && is_numeric($label[1])
+                && is_numeric($label[2])
+                && is_numeric($label[3])
+            ) {
+                $outpost->setLabelPosition(
+                    new Position(
+                        (float) $label[1],
+                        (float) $label[2],
+                        (float) $label[3],
+                        $labelWorld
+                    )
+                );
+            }
+        }
 
         return $outpost;
     }

@@ -16,7 +16,6 @@ final class EconomyChangeEventReason
     public const COMMAND = 'command';
     public const SET = 'set';
     public const RESET = 'reset';
-    public const CRATE = 'crate';
     public const OUTPOST = 'outpost';
 
     private function __construct()

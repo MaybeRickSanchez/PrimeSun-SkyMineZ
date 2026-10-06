@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace AM\SkyMineZ\command;
 
 use pocketmine\block\Block;
+use pocketmine\block\BlockTypeIds;
 use pocketmine\player\Player;
 use pocketmine\world\Position;
 
@@ -77,7 +78,19 @@ final class TargetResolver
      * sight. Solids must be hit or the command would "find" the block behind a
      * wall.
      *
+     * Empty would hit air immediately and return the air in front of the
+     * player, breaking /crate create, /lb create and pos selection.
+     *
      * @var array<int, true>
      */
-    private const TRANSPARENT = [];
+    private const TRANSPARENT = [
+        BlockTypeIds::AIR => true,
+        BlockTypeIds::WATER => true,
+        BlockTypeIds::LAVA => true,
+        BlockTypeIds::GLASS => true,
+        BlockTypeIds::GLASS_PANE => true,
+        BlockTypeIds::LEAVES => true,
+        BlockTypeIds::TALL_GRASS => true,
+        BlockTypeIds::SNOW_LAYER => true,
+    ];
 }

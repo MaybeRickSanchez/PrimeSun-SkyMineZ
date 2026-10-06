@@ -47,16 +47,6 @@ class MineBox extends CollisionBox
         return $this->getMaxZ() - $this->getMinZ() + 1;
     }
 
-    public function getCenter(): Position
-    {
-        return new Position(
-            ($this->getMinX() + $this->getMaxX() + 1) / 2,
-            ($this->getMinY() + $this->getMaxY() + 1) / 2,
-            ($this->getMinZ() + $this->getMaxZ() + 1) / 2,
-            $this->getWorld()
-        );
-    }
-
     /**
      * Builds the shuffled block pool for a refill.
      *
@@ -122,12 +112,14 @@ class MineBox extends CollisionBox
                 $i < $count;
                 ++$i
             ) {
-                $pool[] = $entry['block'];
+                // Clone: sharing one Block instance across slots aliases
+                // state and breaks fills that mutate the block.
+                $pool[] = clone $entry['block'];
             }
         }
 
         while (count($pool) < $volume) {
-            $pool[] = $entries[mt_rand(
+            $pool[] = clone $entries[mt_rand(
                 0,
                 $last
             )]['block'];
@@ -146,22 +138,36 @@ class MineBox extends CollisionBox
      */
     public function evacuatePlayers(): void
     {
+        $world = $this->getWorld();
         $top = $this->getMaxY() + 2;
 
-        foreach (
-            $this->getWorld()->getPlayers() as $player
-        ) {
+        foreach ($world->getPlayers() as $player) {
             $position = $player->getPosition();
 
-            if (!$this->isIn($position)) {
+            if ($player->getWorld() !== $world || !$this->isIn($position)) {
                 continue;
             }
 
-            $player->teleport(new Vector3(
+            $target = new Position(
                 $position->x,
                 $top,
-                $position->z
-            ));
+                $position->z,
+                $world
+            );
+
+            // Keep yaw/pitch so evacuation does not snap the player's view.
+            $location = $player->getLocation();
+
+            $target = new \pocketmine\entity\Location(
+                $target->x,
+                $target->y,
+                $target->z,
+                $world,
+                $location->getYaw(),
+                $location->getPitch()
+            );
+
+            $player->teleport($target);
         }
     }
 }

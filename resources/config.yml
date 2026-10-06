@@ -8,6 +8,14 @@
 prefix: "§b§lSkyMine §7§8| §r"
 
 # ---------------------------------------------------------------------------
+# Server identity
+# ---------------------------------------------------------------------------
+server:
+  # Shown on sidebars and leaderboard footers instead of the detected IP.
+  # Leave empty to auto-detect (ip or ip:port).
+  address-override: ""
+
+# ---------------------------------------------------------------------------
 # Sidebar (scoreboard)
 # ---------------------------------------------------------------------------
 scoreboard:
@@ -80,6 +88,12 @@ economy:
 # Crates
 # ---------------------------------------------------------------------------
 crates:
+  # Opening without holding a valid key is refused. Turn off for free crates.
+  require-key: true
+  # Eat exactly one key when an opening starts. Turn off for unlimited keys.
+  consume-key: true
+  # Shulker color for newly created crates (purple, red, lime, ...).
+  default-color: purple
   # Total frames played before the winner is revealed.
   animation-steps: 36
   # Ticks between revealing the reward and handing it over.
@@ -124,6 +138,144 @@ outposts:
   gold-reward: 1
 
 # ---------------------------------------------------------------------------
+# Lobby
+# ---------------------------------------------------------------------------
+lobby:
+  # Where players go on join: first = only players who never played before,
+  # always = everybody on every join, never = no automatic teleport.
+  # /hub and /lobby always work regardless of this setting.
+  join-teleport: first
+  # When true, breaking, placing and right-clicking blocks inside the
+  # protected lobby area (set with /lobby protect) is refused.
+  protection-enabled: true
+  # Cancel fall damage inside the protected area.
+  no-fall-damage: true
+  # Cancel void damage inside the protected area and pull the player back to
+  # the lobby instead.
+  void-rescue: true
+  # Freeze hunger inside the protected area.
+  no-hunger: true
+
+# ---------------------------------------------------------------------------
+# Teams and duels
+# ---------------------------------------------------------------------------
+teams:
+  # Seconds a team invitation stays valid.
+  invite-seconds: 120
+  # Seconds a duel challenge stays valid before it expires.
+  challenge-seconds: 60
+  # Maximum duel length in seconds. When it runs out the duel ends in a draw
+  # and everybody returns to where they fought from.
+  duel-seconds: 600
+  # XP the winning team earns per duel victory.
+  duel-win-xp: 50
+  # XP needed for one team level.
+  xp-per-level: 100
+  # Duel arena rendezvous, set in-game with /team arena seta|setb (admin).
+  # Side A members teleport to arena-a, side B to arena-b when a duel starts;
+  # an unset side fights where it stands. Everybody returns afterwards.
+  #arena-a: {world: world, x: 0.5, y: 64.0, z: 0.5, yaw: 0.0, pitch: 0.0}
+  #arena-b: {world: world, x: 10.5, y: 64.0, z: 0.5, yaw: 180.0, pitch: 0.0}
+
+# ---------------------------------------------------------------------------
+# Daily quests
+# ---------------------------------------------------------------------------
+quests:
+  # type: mine = break blocks, kill = defeat players, earn = gain money.
+  # target: how many. reward-money / reward-gold: paid once per day per quest.
+  list:
+    - id: miner_1
+      name: "Apprentice Miner"
+      desc: "Mine 50 blocks"
+      type: mine
+      target: 50
+      reward-money: 100
+      reward-gold: 0
+    - id: hunter_1
+      name: "First Blood"
+      desc: "Defeat 1 player"
+      type: kill
+      target: 1
+      reward-money: 150
+      reward-gold: 1
+    - id: earner_1
+      name: "Pocket Money"
+      desc: "Earn 500 money"
+      type: earn
+      target: 500
+      reward-money: 50
+      reward-gold: 0
+
+# ---------------------------------------------------------------------------
+# Shop (categories with buy/sell prices; item names use /give syntax)
+# ---------------------------------------------------------------------------
+shop:
+  categories:
+    - id: blocks
+      name: "Blocks"
+      items:
+        - {item: stone, count: 16, buy: 32, sell: 8}
+        - {item: cobblestone, count: 16, buy: 24, sell: 6}
+        - {item: oak_log, count: 8, buy: 40, sell: 10}
+    - id: ores
+      name: "Ores"
+      items:
+        - {item: coal, count: 8, buy: 80, sell: 20}
+        - {item: iron_ingot, count: 4, buy: 120, sell: 30}
+        - {item: diamond, count: 1, buy: 500, sell: 150}
+
+# ---------------------------------------------------------------------------
+# Progression gear (tools and armor)
+# ---------------------------------------------------------------------------
+tools:
+  # XP earned per block broken while holding gear.
+  xp-per-block: 1
+  # Hard cap. Nobody upgrades past this, whatever they own.
+  max-level: 10
+  # Total XP banked to be eligible for a level: (level - 1) * xp-per-level.
+  xp-per-level: 100
+  # Upgrade packages per target level: enchantments granted + materials eaten.
+  upgrades:
+    - level: 2
+      enchants: {efficiency: 1}
+      materials:
+        - {item: iron_ingot, count: 16}
+    - level: 3
+      enchants: {efficiency: 2, unbreaking: 1}
+      materials:
+        - {item: iron_ingot, count: 32}
+        - {item: coal, count: 16}
+    - level: 4
+      enchants: {efficiency: 3, fortune: 1}
+      materials:
+        - {item: diamond, count: 4}
+
+# ---------------------------------------------------------------------------
+# Composer (material processing recipes)
+# ---------------------------------------------------------------------------
+composer:
+  recipes:
+    - id: compact_coal
+      name: "Compact Coal"
+      inputs:
+        - {item: coal, count: 9}
+      output: {item: coal_block, count: 1}
+    - id: bread
+      name: "Bread"
+      inputs:
+        - {item: wheat, count: 3}
+      output: {item: bread, count: 1}
+
+# ---------------------------------------------------------------------------
+# Trading
+# ---------------------------------------------------------------------------
+trade:
+  # Seconds a trade request stays valid.
+  request-seconds: 60
+  # Seconds an open trade session may idle before items are returned.
+  session-seconds: 300
+
+# ---------------------------------------------------------------------------
 # Lag protection
 # ---------------------------------------------------------------------------
 lagmaker:
@@ -146,3 +298,512 @@ lagmaker:
     interval: 36000
     # Item entities despawned per tick during a cleanup pass.
     per-tick: 200
+
+# ---------------------------------------------------------------------------
+# Messages
+# Every player-facing chat string, keyed for translation or rewording.
+# Placeholders use {braces} and are filled in at runtime; unknown placeholders
+# are left untouched. An empty or missing entry falls back to the built-in
+# default, so old configs keep working. Colors: entries used for raw chat keep
+# their full color codes; entries shown through error/success/info helpers
+# carry no leading color because the helper adds it.
+# ---------------------------------------------------------------------------
+messages:
+  board.bad-type: "Unknown type. Use one of: {types}."
+  board.create-usage: "Usage: /lb create <name> <type>"
+  board.created: "Board '{name}' created."
+  board.gone: "That board is gone."
+  board.help-create: "§e/lb create <name> <type> [title] §7- create a board where you look"
+  board.help-info: "§e/lb info <name> §7- details"
+  board.help-list: "§e/lb list §7- list all boards"
+  board.help-refresh: "§e/lb refresh §7- recompute every board now"
+  board.help-remove: "§e/lb remove <name> §7- delete a board"
+  board.help-setpos: "§e/lb setpos <name> §7- move the board"
+  board.help-title: "§eSkyMineZ leaderboards"
+  board.help-title-set: "§e/lb title <name> <title> §7- change the title"
+  board.help-types: "§7Types: {types}"
+  board.info-pos: "§7Position: §f{where}"
+  board.info-title: "§eLeaderboard {name}"
+  board.info-title-is: "§7Title: §f{title}"
+  board.info-type: "§7Type: §f{type}"
+  board.info-world: "§7World: §f{world}"
+  board.list-row: "§f{name} §8| §7{type} §8| §7{world} §8({x}, {y}, {z})"
+  board.list-title: "§eLeaderboards ({count}):"
+  board.menu-only: "The leaderboard manager opens in-game."
+  board.moved: "Board moved."
+  board.moved-to: "Leaderboard moved to {where}."
+  board.none: "No leaderboards are configured."
+  board.refreshed: "All boards refreshed."
+  board.refreshed-all: "Refreshed all leaderboards."
+  board.remove-usage: "Usage: /lb remove <name>"
+  board.removed: "Removed leaderboard '{name}'."
+  board.title-set: "Title updated."
+  board.title-usage: "Usage: /lb title <name> <title>"
+  board.types: "§7Types: {types}"
+  board.unknown: "No board named '{name}'."
+  common.deleted: "Deleted '{name}'."
+  common.in-game-only: "§cThis command can only be used in-game."
+  common.label-moved: "Label moved."
+  common.look-at-block: "Look at a block first."
+  common.must-type: "§cPlease type something first."
+  common.no-permission: "You cannot do that."
+  common.player-offline: "That player is not online."
+  common.select-area: "Select the area first: /skymine pos1 and /skymine pos2 (or the Position Wand)."
+  common.select-region: "Select the region first: /skymine pos1 and /skymine pos2."
+  common.unknown-block: "Unknown block '{block}'."
+  composer.bad-item: "Unknown item '{item}'. Hold it or type a /give name."
+  composer.created: "Recipe '{id}' created."
+  composer.deleted: "Recipe '{id}' deleted."
+  composer.done: "§aComposed §f{count}x {item}§a!"
+  composer.exists: "A recipe '{id}' already exists."
+  composer.fill-hint: "§7Put the materials in, then close the window to compose."
+  composer.hold-item: "Hold the item first."
+  composer.input-added: "Added {count}x {item}."
+  composer.input-removed: "Input removed."
+  composer.mismatch: "§cThose materials don't match '{name}'. Everything was returned."
+  composer.need-count: "Count must be a number above 0."
+  composer.need-name: "Give the recipe a name."
+  composer.no-recipes: "No composer recipes are configured."
+  composer.only: "The composer can only be used in-game."
+  composer.open-fail: "Could not open the workbench."
+  composer.output-set: "Output set to {count}x {item}."
+  composer.renamed: "Recipe renamed to '{name}'."
+  composer.unknown: "No recipe '{id}'."
+  crate.bad-weight: "Weight must be a number above 0."
+  crate.busy: "§eThis crate is currently opening."
+  crate.color-set: "Crate '{name}' is now {color}."
+  crate.color-usage: "Usage: /crate color <name> <color> ({colors})"
+  crate.create-usage: "Usage: /crate create <name>"
+  crate.created: "Created crate '{name}' and registered its key."
+  crate.give-hint: "§7Give yourself a key with /crate givekey <player> {name}"
+  crate.givekey-usage: "Usage: /crate givekey <player> <crate> [amount]"
+  crate.gone: "That crate is gone."
+  crate.help-color: "§e/crate color <name> <color> §7- recolor the shulker"
+  crate.help-create: "§e/crate create <name> §7- create a crate on the block you look at"
+  crate.help-givekey: "§e/crate givekey <player> <crate> [amount] §7- give a key"
+  crate.help-list: "§e/crate list §7- list all crates"
+  crate.help-menu: "§e/crate menu §7- manage everything with forms"
+  crate.help-move: "§e/crate move <name> §7- move a crate to the block you look at"
+  crate.help-open: "§e/crate open <name> §7- preview a crate"
+  crate.help-remove: "§e/crate remove <name> §7- delete a crate"
+  crate.help-reward-add: "§e/crate reward add <crate> <item> [type] [weight] §7- add a reward"
+  crate.help-reward-list: "§e/crate reward list <crate> §7- list rewards and their chances"
+  crate.help-reward-remove: "§e/crate reward remove <crate> <index> §7- remove a reward"
+  crate.help-reward-type: "§e/crate reward type <crate> <index> <type> §7- change a rarity"
+  crate.help-reward-weight: "§e/crate reward weight <crate> <index> <weight> §7- change a weight"
+  crate.help-save: "§e/crate save §7- write crates.json now"
+  crate.help-title: "§eSkyMineZ crates"
+  crate.hold-item: "Hold the item first."
+  crate.in-use: "That crate is in use right now. Try again in a moment."
+  crate.key-given: "Key given."
+  crate.key-given-full: "Gave {amount}x '{key}' key to {player}."
+  crate.list-row: "§f{name} §8| §7{world} §8({x}, {y}, {z}) §8| §7{rewards} rewards §8| §7{keys} keys"
+  crate.list-title: "§eCrates ({count}):"
+  crate.menu-only: "The crate manager opens in-game."
+  crate.move-usage: "Usage: /crate move <name>"
+  crate.moved: "Moved crate '{name}'."
+  crate.name-rule: "A crate name may only contain letters, digits, underscores and dashes."
+  crate.no-break: "§cYou cannot break a crate. Use /crate remove <name>."
+  crate.no-key: "§cYou need a key to open this crate."
+  crate.no-pick: "No reward could be selected."
+  crate.no-preview: "§cThis crate has no rewards to preview."
+  crate.no-rewards: "This crate has no rewards."
+  crate.none: "No crates are configured."
+  crate.open-usage: "Usage: /crate open <name>"
+  crate.opening: "§eThis crate is currently opening."
+  crate.preview-hint: "Previewing crate '{name}'. Sneak and right-click it to open."
+  crate.remove-usage: "Usage: /crate remove <name>"
+  crate.removed: "Removed crate '{name}'."
+  crate.reward-add-usage: "Usage: /crate reward add <crate> <item[:meta][:count]> [type] [weight]"
+  crate.reward-added: "Reward added."
+  crate.reward-added-full: "Added {item} (weight {weight})."
+  crate.reward-added2: "Added {count}x {item} to '{crate}' as reward #{index}."
+  crate.reward-bad-action: "Unknown action. Use add, remove, list, weight or type."
+  crate.reward-bad-item: "Unknown item '{item}'. Try /give style syntax, e.g. diamond_sword or diamond 64."
+  crate.reward-bad-type: "Unknown reward type '{type}'. Use {types}."
+  crate.reward-none: "Crate '{crate}' has no rewards."
+  crate.reward-range: "Reward index out of range."
+  crate.reward-removed: "Reward removed."
+  crate.reward-row: "§f#{index} §8| §7{type} §8| §f{count}x {item} §8| §7chance §e{chance}% §8| §7weight §e{weight}"
+  crate.reward-title: "§eRewards of {crate}:"
+  crate.reward-type-usage: "Usage: /crate reward type <crate> <index> <type>"
+  crate.reward-usage: "Usage: /crate reward <add|remove|list|weight|type> <crate> ..."
+  crate.reward-weight-usage: "Usage: /crate reward weight <crate> <index> <weight>"
+  crate.saved: "Saved all crates."
+  crate.someone-viewing: "Someone is currently viewing this crate."
+  crate.type-set: "Type updated."
+  crate.unknown: "No crate named '{name}'."
+  crate.weight-set: "Weight updated."
+  crate.wrong-key: "§cThis key cannot open this crate."
+  hub.info-lobby: "§eLobby: §f{where}"
+  hub.info-mid: "§eMid-lobby: §f{where}"
+  hub.info-protection: "§eProtection: §f{state}"
+  hub.mid-removed: "Mid-lobby removed."
+  hub.no-lobby: "No lobby has been set yet. An admin can set one with /lobby set."
+  hub.only-players: "Only players can teleport to the lobby."
+  hub.protect-removed: "Lobby protection removed."
+  hub.protect-set: "Lobby protection area set."
+  hub.removed: "Lobby removed."
+  hub.set: "Lobby set to {where}."
+  hub.set-mid: "Mid-lobby set to {where}."
+  hub.teleported: "Teleported to the lobby."
+  label.add-usage: "Usage: /label addline <name> <text>"
+  label.added: "Line added to '{name}'."
+  label.create-usage: "Usage: /label create <name> [text]"
+  label.created: "Label '{name}' created."
+  label.del-usage: "Usage: /label delline <name> <line-index>"
+  label.help-add: "§e/label addline <name> <text> §7- append a line"
+  label.help-create: "§e/label create <name> [text] §7- floating label where you look"
+  label.help-del: "§e/label delline <name> <line> §7- delete a line"
+  label.help-info: "§e/label info <name> §7- show every line"
+  label.help-list: "§e/label list §7- list all labels"
+  label.help-move: "§e/label move <name> §7- move it to where you look"
+  label.help-remove: "§e/label remove <name> §7- delete it"
+  label.help-set: "§e/label set <name> <line> <text> §7- rewrite one line"
+  label.info-line: "§f#{index} §8| §r{line}"
+  label.info-title: "§eLabel {name}:"
+  label.info-usage: "Usage: /label info <name>"
+  label.line-updated: "Line {index} of '{name}' updated."
+  label.list-row: "§f{name} §8| §7{count} lines §8| §7{where}"
+  label.list-title: "§eLabels:"
+  label.move-usage: "Usage: /label move <name>"
+  label.moved: "Label '{name}' moved."
+  label.none: "No labels exist yet."
+  label.range: "Line index out of range."
+  label.remove-usage: "Usage: /label remove <name>"
+  label.removed-line: "Line {index} removed from '{name}'."
+  label.set-usage: "Usage: /label set <name> <line-index> <text>"
+  label.unknown: "No label named '{name}'."
+  lag.clear-all: "§eClearing all ground items."
+  lag.clear-ttl: "§eClearing items older than {seconds}s."
+  lag.too-many: "§cYou have too many items on the ground. Pick some up first."
+  lag.warn: "§eGround items will be cleared in §c{seconds}s§e."
+  lobby.hub-set: "Hub set. /hub brings players here."
+  lobby.mid-set: "Mid-lobby set. The welcome sidebar shows around it."
+  lobby.protect-removed: "Protection removed."
+  lobby.protect-set: "Protection area set."
+  menu.hub: "Teleported to the lobby."
+  menu.no-lobby: "No lobby has been set yet."
+  menu.no-warps: "No warps exist yet."
+  menu.pvp-off: "PvP disabled."
+  menu.pvp-on: "PvP enabled."
+  menu.reload-fail: "Reload failed: {error}"
+  menu.reloaded: "Plugin reloaded."
+  menu.save-fail: "Save failed: {error}"
+  menu.saved: "Everything saved."
+  menu.sidebar-off: "Sidebar disabled."
+  menu.sidebar-on: "Sidebar enabled."
+  menu.warp-gone: "That warp is unavailable."
+  menu.warped: "Warped to '{name}'."
+  mine.add-blocks-hint: "§7Now add blocks: /mine block add {name} stone 60"
+  mine.bad-interval: "Enter 0 or more seconds."
+  mine.block-add-usage: "Usage: /mine block add <mine> <block> <percent 1-100>"
+  mine.block-added: "Block added at 60%. Adjust with /mine if needed."
+  mine.block-added-full: "Added {percent}% {block} to '{mine}'."
+  mine.block-bad: "Unknown action. Use add, remove or list."
+  mine.block-removed: "Block entry removed."
+  mine.block-row: "§f#{index} §8| §7{name} §8| §e{percent}%"
+  mine.block-unknown: "Unknown block '{block}'. Try one of: {suggestions}, ..."
+  mine.block-usage: "Usage: /mine block <add|remove|list> <mine> ..."
+  mine.blocks-cleared: "Block list cleared."
+  mine.blocks-title: "§eBlocks of {mine}:"
+  mine.create-usage: "Usage: /mine create <name> (letters, digits, underscore and dash only)"
+  mine.created: "Created mine '{name}' ({blocks} block types)."
+  mine.help-block-add: "§e/mine block add <mine> <block> <percent> §7- add a block"
+  mine.help-block-list: "§e/mine block list <mine> §7- list the block list"
+  mine.help-block-remove: "§e/mine block remove <mine> <index> §7- remove a block"
+  mine.help-clear: "§e/mine clearblocks <mine> §7- empty the block list"
+  mine.help-create: "§e/mine create <name> §7- create a mine from the selection"
+  mine.help-info: "§e/mine info <mine> §7- details"
+  mine.help-interval: "§e/mine setinterval <mine> <seconds> §7- 0 disables auto reset"
+  mine.help-label: "§e/mine setlabel <mine> §7- move the hologram"
+  mine.help-list: "§e/mine list §7- list all mines"
+  mine.help-pos1: "§e/mine pos1 §7- select the first corner (look at a block)"
+  mine.help-pos2: "§e/mine pos2 §7- select the second corner"
+  mine.help-reset: "§e/mine reset <mine|all> §7- refill now"
+  mine.help-title: "§eSkyMineZ mines"
+  mine.hold-block: "Hold a block first."
+  mine.hold-solid: "Hold a placeable block first."
+  mine.index-range: "Block index out of range."
+  mine.info-interval: "§7Interval: §f{interval}"
+  mine.info-size: "§7Size: §f{size} §7({volume} blocks)"
+  mine.info-state: "§7State: §f{state} §7| §7configured percentages: §f{percent}%"
+  mine.info-title: "§eMine {name}:"
+  mine.info-world: "§7World: §f{world}"
+  mine.interval-set: "Interval updated."
+  mine.interval-set-to: "Interval set to {value}."
+  mine.interval-usage: "Usage: /mine setinterval <name> <seconds> (0 = manual only)"
+  mine.label-set: "Label moved to {where}."
+  mine.list-row: "§f{name} §8| §7{volume} blocks §8| §7{types} block types §8| §7{interval}"
+  mine.list-title: "§eMines ({count}):"
+  mine.menu-only: "The mine manager opens in-game."
+  mine.no-blocks: "Mine '{mine}' has no blocks yet."
+  mine.none: "No mines exist yet. Create one with /mine create <name>."
+  mine.refill-busy: "Already refilling, or the mine has no blocks."
+  mine.refilling: "Refilling."
+  mine.refilling-named: "Refilling '{name}'."
+  mine.remove-usage: "Usage: /mine remove <name>"
+  mine.removed: "Removed mine '{name}'."
+  mine.reset-none: "No mine could be reset (empty or already refilling)."
+  mine.resetting: "Resetting {count} mine(s)."
+  mine.unknown: "No mine named '{name}'."
+  mine.weight-total: "Percentages currently add up to {total}%; they are scaled on reset."
+  outpost.captured: "§6+ §e{player} §6has captured the outpost §e{name}§6!"
+  outpost.create-usage: "Usage: /outpost create <name>"
+  outpost.created: "Created outpost '{name}' capturing in {world}."
+  outpost.gold: "§6+ You received §e{reward} §6gold from the outpost §e{name}§6!"
+  outpost.gone: "That outpost is gone."
+  outpost.help-create: "§e/outpost create <name> §7- create an outpost from the pos1/pos2 selection"
+  outpost.help-info: "§e/outpost info <name> §7- details"
+  outpost.help-list: "§e/outpost list §7- list all outposts"
+  outpost.help-owner: "§e/outpost owner <name> <player|clear> §7- force the owner"
+  outpost.help-remove: "§e/outpost remove <name> §7- delete an outpost"
+  outpost.help-reset: "§e/outpost reset <name> §7- unlock it and clear progress"
+  outpost.help-setlabel: "§e/outpost setlabel <name> §7- move the hologram to where you look"
+  outpost.help-title: "§eSkyMineZ outposts"
+  outpost.info-owned: "§7Owned outposts: §f{count}"
+  outpost.info-owner: "§7Owner: §f{owner}"
+  outpost.info-progress: "§7Progress: §f{progress}/{required}"
+  outpost.info-state: "§7State: §f{state}"
+  outpost.info-title: "§eOutpost {name}"
+  outpost.info-unlocks: "§7Unlocks in: §e{in}"
+  outpost.info-world: "§7World: §f{world}"
+  outpost.label-moved: "Moved the label of '{name}'."
+  outpost.list-row: "§f{name} §8| §7{world} §8| §7owner §f{owner} §8| §7{state}"
+  outpost.list-title: "§eOutposts ({count}):"
+  outpost.menu-only: "The outpost manager opens in-game."
+  outpost.none: "No outposts exist yet. Create one with /outpost create <name>."
+  outpost.open: "§a+ §eThe outpost §6{name} §ais capturable again!"
+  outpost.owner-set: "Owner set to {owner}."
+  outpost.owner-updated: "Owner updated."
+  outpost.owner-usage: "Usage: /outpost owner <name> <player|clear>"
+  outpost.remove-usage: "Usage: /outpost remove <name>"
+  outpost.removed: "Removed outpost '{name}'."
+  outpost.taken: "§6+ §e{player} §6has taken the outpost §e{name} §6from §e{previous}§6!"
+  outpost.unknown: "No outpost named '{name}'."
+  outpost.unlocked: "Unlocked and progress cleared."
+  pvp.off: "§c{player} has PvP disabled."
+  quest.claimed: "Reward claimed. Come back tomorrow for more."
+  quest.none: "No daily quests are configured."
+  quest.only: "Quests can only be viewed in-game."
+  quest.unavailable: "That reward is no longer available."
+  shop.bought: "Bought. Check your inventory."
+  shop.empty: "The shop is empty right now."
+  shop.no-category: "That category is gone."
+  shop.no-items: "You do not have enough of that item."
+  shop.no-money: "Not enough money."
+  shop.no-offer: "That offer is gone."
+  shop.nothing: "You do not have any of that item."
+  shop.only: "The shop can only be opened in-game."
+  shop.sold: "Sold."
+  shop.sold-all: "Sold everything for {amount} money."
+  skymine.economy-actions: "Use give, take, set or check."
+  skymine.economy-amount: "The amount must be greater than 0."
+  skymine.economy-changed: "§aYour {type} balance changed to {balance}."
+  skymine.economy-check: "{player} has {balance} {type}."
+  skymine.economy-no-perm: "You do not have permission to manage balances."
+  skymine.economy-set: "{player} now has {balance} {type}."
+  skymine.economy-usage: "Usage: /{type} <give|take|set|check> <player> [amount]"
+  skymine.help-gold: "§e/skymine gold <give|take|set|check> <player> [amount]"
+  skymine.help-hud: "§e/skymine hud §7- toggle the sidebar"
+  skymine.help-lagmaker: "§e/skymine lagmaker <status|toggle|cleanup <mode>>"
+  skymine.help-menu: "§e/skymine menu §7- open the main menu"
+  skymine.help-money: "§e/skymine money <give|take|set|check> <player> [amount]"
+  skymine.help-pos1: "§e/skymine pos1 §7- select the first corner"
+  skymine.help-pos2: "§e/skymine pos2 §7- select the second corner"
+  skymine.help-pvp: "§e/skymine pvp [on|off] §7- toggle your PvP"
+  skymine.help-reload: "§e/skymine reload §7- re-read config.yml and reload the data"
+  skymine.help-save: "§e/skymine save §7- write every store now"
+  skymine.help-stats: "§e/skymine stats [player] §7- show mining stats"
+  skymine.help-title: "§eSkyMineZ"
+  skymine.help-wand: "§e/skymine wand §7- get the Position Wand (click: pos1, sneak-click: pos2)"
+  skymine.hud-only: "The sidebar can only be toggled in-game."
+  skymine.hud-state: "Sidebar {state}."
+  skymine.lag-mode: "Mode must be off, ttl or all."
+  skymine.lag-mode-set: "Cleanup mode set to '{mode}'."
+  skymine.lag-status: "Enabled: {enabled} | mode: {mode} | auto stack: {stack}"
+  skymine.lag-toggled: "Lag protection {state}."
+  skymine.lag-usage: "Use /skymine lagmaker <status|toggle|cleanup <mode>>"
+  skymine.menu-only: "The menu is only available in-game."
+  skymine.pos-only: "Selections can only be set in-game."
+  skymine.pos-set: "{which} set to {world} ({x}, {y}, {z})"
+  skymine.pvp-for: "PvP for {player} is {state}."
+  skymine.pvp-now: "PvP is now {state}."
+  skymine.pvp-self-only: "You can only change your own PvP setting."
+  skymine.reloaded: "SkyMineZ reloaded."
+  skymine.saved: "Saved every SkyMineZ store."
+  skymine.selection-clear-only: "Selections can only be cleared in-game."
+  skymine.selection-cleared: "Selection cleared."
+  skymine.stats-console: "Name a player when running this from the console."
+  skymine.stats-deaths: "§7Deaths: §f{deaths}"
+  skymine.stats-gold: "§7Gold: §f{gold}"
+  skymine.stats-kills: "§7Kills: §f{kills}"
+  skymine.stats-mined: "§7Mined: §f{mined}"
+  skymine.stats-money: "§7Money: §f{money}"
+  skymine.stats-streak: "§7Kill streak: §f{streak}"
+  skymine.stats-title: "§eStats of {player}"
+  skymine.wand-given: "Position Wand received. Left-click: pos1. Sneak + left-click: pos2."
+  skymine.wand-only: "The wand can only be given in-game."
+  slapper.attached: "Block '{label}' attached."
+  slapper.block-add-usage: "Usage: /slapper block add <slapper> <block> [label]"
+  slapper.block-added: "Added slapper block '{label}'."
+  slapper.block-remove-usage: "Usage: /slapper block remove <name>"
+  slapper.block-removed: "Removed slapper block '{name}'."
+  slapper.block-row: "§f{name} §8| §7{block} §8| §7{slapper} §8| §7{where}"
+  slapper.block-unknown: "No slapper block named '{name}'."
+  slapper.block-use: "Use add, remove or list."
+  slapper.blocks-none: "No slapper blocks are configured."
+  slapper.blocks-title: "§eSlapper blocks ({count}):"
+  slapper.cmd-add-usage: "Usage: /slapper cmd add <name> <command>"
+  slapper.cmd-added: "Command added."
+  slapper.cmd-none: "That slapper has no commands."
+  slapper.cmd-range: "Command index out of range."
+  slapper.cmd-row: "§f#{index} §8| §7{command}"
+  slapper.cmd-updated: "Commands updated."
+  slapper.cmd-usage: "Usage: /slapper cmd <add|remove|clear|list> <name> [command]"
+  slapper.create-hint: "Add behaviour: /slapper msg add {name} <text>  |  /slapper cmd add {name} <command>"
+  slapper.create-usage: "Usage: /slapper create <name> (letters, digits, underscore and dash only)"
+  slapper.created: "Slapper '{name}' created with your skin."
+  slapper.gone: "That slapper is gone."
+  slapper.help-block: "§e/slapper block <add|remove|list> ..."
+  slapper.help-cmd: "§e/slapper cmd <add|remove|clear|list> <name> [command]"
+  slapper.help-console: "§7Prefix a command with console: to run it as console (for give/warp)."
+  slapper.help-create: "§e/slapper create <name> §7- spawn an NPC with your skin at your feet"
+  slapper.help-list: "§e/slapper list §7- list all slappers"
+  slapper.help-move: "§e/slapper move <name> §7- move it to where you stand"
+  slapper.help-msg: "§e/slapper msg <add|remove|clear|list> <name> [text]"
+  slapper.help-placeholders: "§7Placeholders: {player} and {name} are the clicker."
+  slapper.help-remove: "§e/slapper remove <name> §7- delete it and its blocks"
+  slapper.help-title: "§eSkyMineZ slappers"
+  slapper.list-none: "No slappers are configured."
+  slapper.list-row: "§f{name} §8| §7{world} §8| §7{commands} commands §8| §7{messages} messages"
+  slapper.list-title: "§eSlappers ({count}):"
+  slapper.menu-only: "The slapper manager opens in-game."
+  slapper.move-usage: "Usage: /slapper move <name>"
+  slapper.moved: "Moved."
+  slapper.moved-full: "Moved slapper '{name}'."
+  slapper.msg-add-usage: "Usage: /slapper msg add <name> <text>"
+  slapper.msg-added: "Message added."
+  slapper.msg-none: "That slapper has no messages."
+  slapper.msg-range: "Message index out of range."
+  slapper.msg-row: "§f#{index} §8| §7{message}"
+  slapper.msg-updated: "Messages updated."
+  slapper.msg-usage: "Usage: /slapper msg <add|remove|clear|list> <name> [text]"
+  slapper.remove-usage: "Usage: /slapper remove <name>"
+  slapper.removed: "Removed."
+  slapper.removed-full: "Removed slapper '{name}' and its blocks."
+  slapper.skin: "Skin updated."
+  slapper.solid-only: "Look at a solid block first."
+  slapper.unknown: "No slapper named '{name}'."
+  slapper.use-list: "Use add, remove, clear or list."
+  team.accept-only: "Only players can accept invites."
+  team.arena-cleared: "Duel arena cleared."
+  team.arena-fight-here: "No arena is set, so you fight where you stand."
+  team.arena-info: "§eArena A: §f{a} §8| §eArena B: §f{b}"
+  team.arena-set: "Duel arena {side} set to {where}."
+  team.arena-usage: "Usage: /team arena <seta|setb|clear|info>"
+  team.challenge-expired: "That challenge expired."
+  team.create-usage: "Usage: /team create <name> (letters, digits, _ and - only)"
+  team.created: "Team '{name}' created. You are its owner."
+  team.declined: "Invitation declined."
+  team.deny-only: "Only players can deny invites."
+  team.disband-only: "Only players can disband teams."
+  team.disband-owner: "Only the team owner can disband it."
+  team.disbanded: "Disbanded team '{name}'."
+  team.disbanded-menu: "Team disbanded."
+  team.duel-accept-fail: "Accept failed. Only the challenged owner can accept a live challenge."
+  team.duel-accepted: "Duel accepted. Fight!"
+  team.duel-challenge-fail: "Challenge failed. Only owners can challenge, and neither team may already be fighting."
+  team.duel-challenge-usage: "Usage: /team duel challenge <team>"
+  team.duel-declined: "Challenge declined."
+  team.duel-draw: "§6Duel over: §e{a} §6vs §e{b} §6ended in a draw."
+  team.duel-help-accept: "§e/team duel accept <id> §7- accept a challenge and start the battle"
+  team.duel-help-challenge: "§e/team duel challenge <team> §7- challenge another team (owners only)"
+  team.duel-help-deny: "§e/team duel deny <id> §7- decline a challenge"
+  team.duel-level-up: " §e{winner} reached level {level}§6!"
+  team.duel-nothing: "Nothing to decline."
+  team.duel-only: "Duels can only be arranged in-game."
+  team.duel-over: "§6Duel over: §e{winner} §6defeated §e{loser}§6!"
+  team.duel-received: "§e{player} challenged your team '{team}' to a duel! §a/team duel accept {id} §7or §c/team duel deny {id}"
+  team.duel-sent: "Challenge #{id} sent to '{team}'. They have 1 minute to accept."
+  team.duel-start-fail: "Could not start the battle."
+  team.duel-started: "§6Duel started: §e{a} §6vs §e{b}§6!"
+  team.help-accept: "§e/team accept §7- join the team that invited you"
+  team.help-arena: "§e/team arena <seta|setb|clear|info> §7- duel rendezvous (admin)"
+  team.help-create: "§e/team create <name> §7- found a team"
+  team.help-deny: "§e/team deny §7- decline an invitation"
+  team.help-duel: "§e/team duel ... §7- challenge and fight other teams"
+  team.help-info: "§e/team info [name] §7- show a team"
+  team.help-invite: "§e/team invite <player> §7- invite (owners only)"
+  team.help-kick: "§e/team kick <player> §7- remove a member (owners only)"
+  team.help-leave: "§e/team leave §7- leave your team"
+  team.help-list: "§e/team list §7- list all teams"
+  team.help-menu: "§e/team menu §7- open the team window"
+  team.info-line1: "§7Owner: §f{owner} §8| §7Level: §f{level} §8| §7XP: §f{xp}"
+  team.info-line2: "§7Wins: §a{wins} §8| §7Losses: §c{losses}"
+  team.info-members: "§7Members ({count}): §f{members}"
+  team.info-title: "§eTeam {name}"
+  team.info-usage: "Usage: /team info [name]"
+  team.invite-fail: "Invite failed. Only team owners can invite, and the target must be teamless."
+  team.invite-invalid: "That invitation is no longer valid."
+  team.invite-only: "Only players can invite."
+  team.invite-received: "§e{player} invited you to their team. §a/team accept §7or §c/team deny"
+  team.invite-usage: "Usage: /team invite <player>"
+  team.invited: "Invited {player}. They have 2 minutes to accept."
+  team.joined: "Joined team '{name}'. Welcome!"
+  team.kick-fail: "Kick failed. Only owners can kick members."
+  team.kick-only: "Only players can kick."
+  team.kick-usage: "Usage: /team kick <player>"
+  team.kicked: "Kicked {player} from your team."
+  team.leave-only: "Only players can leave teams."
+  team.left: "Left team '{name}'."
+  team.list-row: "§f{name} §8| §7Lv §f{level} §8| §7{count} members §8| §a{wins}W §c{losses}L"
+  team.list-title: "§eTeams:"
+  team.menu-only: "The team menu is only available in-game."
+  team.no-invite: "You have no pending invitation."
+  team.none: "No teams exist yet."
+  team.not-in-team: "You are not in a team."
+  tools.attuned: "Attuned. Break blocks to earn XP, then upgrade here."
+  tools.hold: "Hold a tool or a piece of armor first."
+  tools.need-durable: "Only tools and armor can become progression gear."
+  tools.no-drop: "§cProgression gear cannot be dropped."
+  tools.no-gear: "That item cannot become gear."
+  tools.only: "Only players hold gear."
+  tools.ready: "§eYour tool is ready for level {level}! §7Open §d/tools §7to upgrade."
+  tools.upgrade-fail: "Upgrade failed. Check your XP, materials and that you still hold the same gear."
+  tools.upgraded: "Upgraded."
+  trade.cancel-death: "§cTrade cancelled: a trader died. Items were returned."
+  trade.cancel-quit: "§cTrade cancelled: a trader disconnected. Items were returned."
+  trade.cancelled: "§cTrade cancelled. Items were returned."
+  trade.confirm-notice: "§e{player} confirmed. Review and §a/trade accept §eto finish."
+  trade.confirmed-wait: "Confirmed. Waiting on the other side..."
+  trade.declined: "Request declined."
+  trade.done: "§aTrade completed."
+  trade.empty: "§cNothing to trade — both sides are empty."
+  trade.invalidated: "§cA side changed their offer. Confirmations reset — review again."
+  trade.no-session: "You have no open trade."
+  trade.nothing: "Nothing to accept: no request and no open trade."
+  trade.nothing-decline: "Nothing to decline."
+  trade.only: "Only players can trade."
+  trade.open: "§eTrade open. §7Top half is yours, bottom half is theirs. §a/trade accept §7when ready — closing cancels."
+  trade.open-fail: "§cTrade could not be opened."
+  trade.request-fail: "Request failed. Are they online, free, and not you?"
+  trade.request-received: "§e{player} wants to trade with you. §a/trade accept §7or §c/trade deny"
+  trade.sent: "Trade request sent to {player}."
+  trade.timeout: "§cTrade timed out. Items were returned."
+  trade.usage: "Usage: /trade <player|accept|deny|cancel>"
+  trade.wrong-side: "§cThat part of the window is not yours."
+  wand.pos1: "§aPos1 set to §f{where} §7(sneak + click for pos2)"
+  wand.pos2: "§aPos2 set to §f{where}"
+  warp.create-usage: "Usage: /warp create <name> (letters, digits, _ and - only)"
+  warp.created: "Warp '{name}' created here."
+  warp.delete-usage: "Usage: /warp delete <name>"
+  warp.deleted: "Warp '{name}' deleted."
+  warp.list-title: "§eWarps:"
+  warp.missing-world: "No warp named '{name}', or its world is not loaded."
+  warp.move-usage: "Usage: /warp move <name>"
+  warp.moved: "Warp '{name}' moved here."
+  warp.none: "No warps are configured."
+  warp.not-found: "No warp named '{name}'."
+  warp.only: "Only players can use warps."
+  warp.warped: "Warped to '{name}'."

@@ -38,11 +38,6 @@ final class MinerBlockMinedEvent extends CancellableSkyMineEvent
         return $this->block;
     }
 
-    public function getBlockName(): string
-    {
-        return $this->block->getName();
-    }
-
     /**
      * How many blocks this break should count as, useful for blocks with a
      * "value" different from one. Always at least 1.

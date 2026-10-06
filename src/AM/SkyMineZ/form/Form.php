@@ -87,24 +87,6 @@ abstract class Form implements IForm
         return true;
     }
 
-    /**
-     * @return callable(Player, mixed): void|null
-     */
-    public function getCallable(): ?callable
-    {
-        return $this->callable;
-    }
-
-    /**
-     * @param callable(Player, mixed): void|null $callable
-     */
-    public function setCallable(?callable $callable): static
-    {
-        $this->callable = $callable;
-
-        return $this;
-    }
-
     public function handleResponse(Player $player, mixed $data): void
     {
         $this->processData($data);
@@ -159,16 +141,6 @@ public function jsonSerialize(): array
         return $this->onCompletion;
     }
 
-    /**
-     * @param callable(Player): void|null $onCompletion
-     */
-    public function setOnCompletion(?callable $onCompletion): static
-    {
-        $this->onCompletion = $onCompletion;
-
-        return $this;
-    }
-
     public function getMaxRetries(): ?int
     {
         return $this->maxRetries;
@@ -207,18 +179,6 @@ public function jsonSerialize(): array
         return $this;
     }
 
-    /**
-     * Shortcut for `$this->setMaxRetries($n)->setKickMessage($m)`, which is the
-     * pair almost every menu wants.
-     */
-    public function setRetryPolicy(
-        int $maxRetries,
-        ?string $kickMessage = null
-    ): self {
-        return $this->setMaxRetries($maxRetries)
-            ->setKickMessage($kickMessage);
-    }
-
     public function setTitle(string $title): static
     {
         $this->data['title'] = $title;
@@ -226,10 +186,4 @@ public function jsonSerialize(): array
         return $this;
     }
 
-    public function getTitle(): string
-    {
-        $title = $this->data['title'] ?? '';
-
-        return is_string($title) ? $title : '';
-    }
 }

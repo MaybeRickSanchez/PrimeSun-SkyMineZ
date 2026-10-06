@@ -21,17 +21,11 @@ use pocketmine\player\Player;
  *             $p->teleport($spawn);
  *         }
  *     });
- *     $form->setTitle('Menu')->addTextButton('Teleport');
+ *     $form->setTitle('Menu')->addButton('Teleport', -1, '', 'teleport');
  *     FormAPI::send($form, $player);
  */
 final class FormAPI
 {
-    /**
-     * Version of the bundled library. It tracks the upstream FormAPI release it
-     * was ported from, plus the PocketMine-MP 5.44 interface additions.
-     */
-    public const VERSION = '2.1.1-skyminerz';
-
     /**
      * A form is only worth sending while the session is up; sending to a
      * disconnecting player silently does nothing but still costs a lookup.
@@ -47,14 +41,6 @@ final class FormAPI
     public static function simple(?callable $callable = null): SimpleForm
     {
         return new SimpleForm($callable);
-    }
-
-    /**
-     * @param callable(Player, mixed): void|null $callable
-     */
-    public static function custom(?callable $callable = null): CustomForm
-    {
-        return new CustomForm($callable);
     }
 
     /**

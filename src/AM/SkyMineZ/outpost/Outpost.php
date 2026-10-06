@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace AM\SkyMineZ\outpost;
 
 use AM\SkyMineZ\event\OutpostCaptureEvent;
+use AM\SkyMineZ\useless\CollisionBox;
 use pocketmine\math\Vector3;
 use pocketmine\world\Position;
 use pocketmine\world\World;
@@ -24,7 +25,7 @@ final class Outpost
     public const STATE_CAPTABLE = 'CAPTABLE';
     public const STATE_COOLDOWN = 'COOLDOWN';
 
-    private OutpostBox $box;
+    private CollisionBox $box;
 
     private OutpostInfo $info;
 
@@ -58,7 +59,7 @@ final class Outpost
         private int $goldChance = 50,
         private int $goldReward = 1
     ) {
-        $this->box = new OutpostBox(
+        $this->box = new CollisionBox(
             $pos1,
             $pos2,
             $world
@@ -93,9 +94,23 @@ final class Outpost
         return $this->info->getName();
     }
 
-    public function getBox(): OutpostBox
-    {
-        return $this->box;
+    /**
+     * Moves the floating label. Null resets it to the computed box center.
+     */
+    public function setLabelPosition(
+        ?Position $position
+    ): self {
+        if ($position === null) {
+            $position = $this->centerOf(
+                $this->box->getPos1(),
+                $this->box->getPos2(),
+                $this->getWorld()
+            );
+        }
+
+        $this->info->setPosition($position);
+
+        return $this;
     }
 
     public function getInfo(): OutpostInfo
@@ -123,11 +138,6 @@ final class Outpost
         return $this->owner;
     }
 
-    public function getCapturer(): ?string
-    {
-        return $this->capturer;
-    }
-
     public function getProgress(): int
     {
         return $this->progress;
@@ -147,6 +157,15 @@ final class Outpost
         ?string $owner
     ): self {
         $this->owner = $owner;
+        // A manual owner change must not leave the old capture locked out:
+        // reset cooldown/progress so the new owner state is immediately sane.
+        $this->state = $owner === null ? self::STATE_CAPTABLE : $this->state;
+        $this->progress = 0;
+        $this->capturer = null;
+
+        if ($owner === null) {
+            $this->availableAt = 0;
+        }
 
         return $this;
     }
@@ -426,13 +445,22 @@ final class Outpost
      *     state: string,
      *     progress: int,
      *     availableAt: int,
-     *     lastGoldAt: int
+     *     lastGoldAt: int,
+     *     label: array{string, float, float, float}|null
      * }
      */
     public function toArray(): array
     {
+        $label = $this->info->getPosition();
+
         return [
             'world' => $this->getWorld()->getFolderName(),
+            'label' => $label === null ? null : [
+                $label->getWorld()->getFolderName(),
+                $label->x,
+                $label->y,
+                $label->z
+            ],
             'pos1' => [
                 $this->box->getPos1()->x,
                 $this->box->getPos1()->y,

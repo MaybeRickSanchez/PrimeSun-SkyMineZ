@@ -26,6 +26,8 @@ final class Leaderboard
     public const TYPE_MINED = 'mined';
     public const TYPE_DEATHS = 'deaths';
     public const TYPE_KILLS = 'kills';
+    public const TYPE_TEAM_LEVEL = 'team_level';
+    public const TYPE_TEAM_WINS = 'team_wins';
 
     /**
      * @var array<string, string>
@@ -35,7 +37,9 @@ final class Leaderboard
         self::TYPE_GOLD => '§6',
         self::TYPE_MINED => '§d',
         self::TYPE_DEATHS => '§c',
-        self::TYPE_KILLS => '§b'
+        self::TYPE_KILLS => '§b',
+        self::TYPE_TEAM_LEVEL => '§e',
+        self::TYPE_TEAM_WINS => '§6'
     ];
 
     /**
@@ -46,7 +50,9 @@ final class Leaderboard
         self::TYPE_GOLD => '§6GOLD TOP',
         self::TYPE_MINED => '§dMINED TOP',
         self::TYPE_DEATHS => '§cDEATHS TOP',
-        self::TYPE_KILLS => '§bKILLS TOP'
+        self::TYPE_KILLS => '§bKILLS TOP',
+        self::TYPE_TEAM_LEVEL => '§eTEAM LEVEL TOP',
+        self::TYPE_TEAM_WINS => '§6TEAM WINS TOP'
     ];
 
     /**
@@ -136,7 +142,8 @@ final class Leaderboard
                     (self::LIST_ROWS + 1) * MultiLineTextParticle::LINE_SPACING
                 ),
                 $position->z
-            )
+            ),
+            $position->getWorld()
         );
 
         /*

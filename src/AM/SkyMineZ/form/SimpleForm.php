@@ -82,11 +82,6 @@ class SimpleForm extends Form
         $data = $this->labelMap[$data] ?? $data;
     }
 
-    public function getContent(): string
-    {
-        return $this->content;
-    }
-
     public function setContent(
         string $content
     ): static {
@@ -118,99 +113,6 @@ class SimpleForm extends Form
         $this->labelMap[] = $label ?? count(
             $this->labelMap
         );
-
-        return $this;
-    }
-
-    /**
-     * Appends a button whose label is its own caption, so the closure can switch
-     * on readable text.
-     */
-    public function addTextButton(
-        string $text
-    ): static {
-        return $this->addButton(
-            $text,
-            -1,
-            '',
-            $text
-        );
-    }
-
-    /**
-     * @param list<string> $texts
-     */
-    public function addButtons(
-        array $texts
-    ): static {
-        foreach (
-            $texts as $text
-        ) {
-            $this->addButton($text);
-        }
-
-        return $this;
-    }
-
-    /**
-     * Inserts a button at a specific position, keeping the labels aligned.
-     */
-    public function insertButton(
-        int $index,
-        string $text,
-        int $imageType = -1,
-        string $imagePath = '',
-        string|int|null $label = null
-    ): static {
-        if (
-            $index < 0
-            || $index > count($this->buttons)
-        ) {
-            return $this;
-        }
-
-        array_splice(
-            $this->buttons,
-            $index,
-            0,
-            [
-                $this->buildButton(
-                    $text,
-                    $imageType,
-                    $imagePath
-                )
-            ]
-        );
-
-        array_splice(
-            $this->labelMap,
-            $index,
-            0,
-            [
-                $label ?? $index
-            ]
-        );
-
-        return $this;
-    }
-
-    /**
-     * @return list<array{text: string, image?: array{type: string, data: string}}>
-     */
-    public function getButtons(): array
-    {
-        return $this->buttons;
-    }
-
-    public function countButtons(): int
-    {
-        return count($this->buttons);
-    }
-
-    public function resetButtons(): static
-    {
-        $this->buttons = [];
-        $this->labelMap = [];
 
         return $this;
     }

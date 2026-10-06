@@ -6,6 +6,8 @@ namespace AM\SkyMineZ;
 
 use AM\SkyMineZ\command\CommandRegistry;
 use AM\SkyMineZ\command\SelectionManager;
+use AM\SkyMineZ\composer\ComposerListener;
+use AM\SkyMineZ\composer\ComposerManager;
 use AM\SkyMineZ\config\ConfigManager;
 use AM\SkyMineZ\crate\CrateListener;
 use AM\SkyMineZ\crate\CrateManager;
@@ -19,13 +21,28 @@ use AM\SkyMineZ\mine\MineListener;
 use AM\SkyMineZ\mine\MineManager;
 use AM\SkyMineZ\miner\MinerListener;
 use AM\SkyMineZ\miner\MinerManager;
+use AM\SkyMineZ\lobby\LobbyListener;
+use AM\SkyMineZ\lobby\LobbyManager;
 use AM\SkyMineZ\outpost\OutpostListener;
 use AM\SkyMineZ\outpost\OutpostManager;
 use AM\SkyMineZ\pvp\PvpListener;
 use AM\SkyMineZ\pvp\PvpManager;
+use AM\SkyMineZ\quest\QuestListener;
+use AM\SkyMineZ\quest\QuestManager;
 use AM\SkyMineZ\scorehud\ScoreHud;
+use AM\SkyMineZ\shop\ShopManager;
 use AM\SkyMineZ\slapper\SlapperListener;
 use AM\SkyMineZ\slapper\SlapperManager;
+use AM\SkyMineZ\label\LabelListener;
+use AM\SkyMineZ\label\LabelManager;
+use AM\SkyMineZ\team\TeamListener;
+use AM\SkyMineZ\team\TeamManager;
+use AM\SkyMineZ\tools\ToolListener;
+use AM\SkyMineZ\tools\ToolManager;
+use AM\SkyMineZ\trade\TradeListener;
+use AM\SkyMineZ\trade\TradeManager;
+use AM\SkyMineZ\wand\PositionWandListener;
+use AM\SkyMineZ\warp\WarpManager;
 use JsonException;
 use pocketmine\plugin\PluginBase;
 use pocketmine\utils\Config;
@@ -77,6 +94,15 @@ final class Main extends PluginBase
     private LeaderboardManager $leaderboardManager;
     private MineManager $mineManager;
     private OutpostManager $outpostManager;
+    private LobbyManager $lobbyManager;
+    private TeamManager $teamManager;
+    private WarpManager $warpManager;
+    private LabelManager $labelManager;
+    private ShopManager $shopManager;
+    private ComposerManager $composerManager;
+    private QuestManager $questManager;
+    private ToolManager $toolManager;
+    private TradeManager $tradeManager;
     private LagMaker $lagMaker;
     private ScoreHud $scoreHud;
 
@@ -145,6 +171,15 @@ final class Main extends PluginBase
             $this,
             $this->goldEconomy
         );
+        $this->lobbyManager = new LobbyManager($this);
+        $this->teamManager = new TeamManager($this);
+        $this->warpManager = new WarpManager($this);
+        $this->labelManager = new LabelManager($this);
+        $this->shopManager = new ShopManager($this);
+        $this->composerManager = new ComposerManager($this);
+        $this->questManager = new QuestManager($this);
+        $this->toolManager = new ToolManager($this);
+        $this->tradeManager = new TradeManager($this);
 
         $this->registerListeners();
 
@@ -214,6 +249,26 @@ final class Main extends PluginBase
                 $this->outpostManager->saveAll();
             }
 
+            if (isset($this->lobbyManager)) {
+                $this->lobbyManager->saveAll();
+            }
+
+            if (isset($this->teamManager)) {
+                $this->teamManager->saveAll();
+            }
+
+            if (isset($this->warpManager)) {
+                $this->warpManager->saveAll();
+            }
+
+            if (isset($this->labelManager)) {
+                $this->labelManager->saveAll();
+            }
+
+            if (isset($this->questManager)) {
+                $this->questManager->saveAll();
+            }
+
             if (isset($this->lagMaker)) {
                 $this->lagMaker->stop();
             }
@@ -245,6 +300,11 @@ final class Main extends PluginBase
         $this->leaderboardManager->saveAll();
         $this->mineManager->saveAll();
         $this->outpostManager->saveAll();
+        $this->lobbyManager->saveAll();
+        $this->teamManager->saveAll();
+        $this->warpManager->saveAll();
+        $this->labelManager->saveAll();
+        $this->questManager->saveAll();
     }
 
     /**
@@ -254,11 +314,19 @@ final class Main extends PluginBase
     {
         $this->getConfigManager()->reload();
 
+        \AM\SkyMineZ\scorehud\ServerAddress::invalidate();
+
         $this->crateManager->load();
         $this->slapperManager->load();
         $this->leaderboardManager->load();
         $this->mineManager->load();
         $this->outpostManager->load();
+        $this->lobbyManager->load();
+        $this->teamManager->load();
+        $this->warpManager->load();
+        $this->labelManager->load();
+        $this->questManager->load();
+        $this->shopManager->reloadDefinitions();
 
         $this->moneyEconomy->setDefaultBalance(
             $this->getConfigManager()->getInt(
@@ -361,6 +429,51 @@ final class Main extends PluginBase
         return $this->outpostManager;
     }
 
+    public function getLobbyManager(): LobbyManager
+    {
+        return $this->lobbyManager;
+    }
+
+    public function getTeamManager(): TeamManager
+    {
+        return $this->teamManager;
+    }
+
+    public function getWarpManager(): WarpManager
+    {
+        return $this->warpManager;
+    }
+
+    public function getLabelManager(): LabelManager
+    {
+        return $this->labelManager;
+    }
+
+    public function getShopManager(): ShopManager
+    {
+        return $this->shopManager;
+    }
+
+    public function getComposerManager(): ComposerManager
+    {
+        return $this->composerManager;
+    }
+
+    public function getQuestManager(): QuestManager
+    {
+        return $this->questManager;
+    }
+
+    public function getToolManager(): ToolManager
+    {
+        return $this->toolManager;
+    }
+
+    public function getTradeManager(): TradeManager
+    {
+        return $this->tradeManager;
+    }
+
     public function getScoreHud(): ScoreHud
     {
         return $this->scoreHud;
@@ -383,10 +496,16 @@ final class Main extends PluginBase
          * Same-priority handlers run in registration order, so the protections
          * that cancel block breaks (crate, mine, slapper) are registered before
          * MinerListener: otherwise a break that gets cancelled would still be
-         * counted towards the MINED stat.
+         * counted towards the MINED stat. LobbyListener goes first of all so
+         * lobby protection wins every conflict (notably: no mine rewards are
+         * granted for a break the lobby is about to cancel).
          */
         foreach (
             [
+                new LobbyListener($this),
+                $this->selectionManager,
+                new TeamListener($this),
+                new LabelListener($this),
                 new CrateListener(
                     $this->crateManager,
                     $this
@@ -396,11 +515,15 @@ final class Main extends PluginBase
                     $this->slapperManager,
                     $this
                 ),
+                new PositionWandListener($this),
                 new EconomyListener($this),
                 new PvpListener($this),
                 new MinerListener($this),
                 new OutpostListener($this),
                 new LeaderboardListener($this),
+                new ComposerListener($this),
+                new QuestListener($this),
+                new ToolListener($this),
                 $this->scoreHud
             ] as $listener
         ) {
@@ -409,6 +532,10 @@ final class Main extends PluginBase
                 $this
             );
         }
+
+        // TradeListener self-registers HIGH+MONITOR+NORMAL handlers in its
+        // constructor, so constructing it is the registration.
+        new TradeListener($this, $this);
 
         $this->lagMaker = new LagMaker($this);
     }
@@ -420,6 +547,12 @@ final class Main extends PluginBase
         $this->leaderboardManager->load();
         $this->mineManager->load();
         $this->outpostManager->load();
+        $this->lobbyManager->load();
+        $this->teamManager->load();
+        $this->warpManager->load();
+        $this->labelManager->load();
+        $this->questManager->load();
+        $this->shopManager->reloadDefinitions();
 
         /*
          * A mine restored from disk has not been rebuilt this session yet, so it

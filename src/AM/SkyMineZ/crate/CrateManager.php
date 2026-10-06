@@ -9,6 +9,8 @@ use AM\SkyMineZ\useless\Arrays;
 use AM\SkyMineZ\useless\ReadOnlyInventory;
 use AM\SkyMineZ\useless\SpreadTask;
 use AM\SkyMineZ\useless\Worlds;
+use pocketmine\block\ShulkerBox;
+use pocketmine\block\DyedShulkerBox;
 use pocketmine\block\VanillaBlocks;
 use pocketmine\math\Vector3;
 use pocketmine\player\Player;
@@ -156,11 +158,16 @@ final class CrateManager
             )
         );
 
+        $color = Crate::colorFromName(
+            $this->main->getConfigManager()->getString('crates.default-color', 'purple')
+        );
+
         $crate = new Crate(
             $this->main,
             $this->readOnlyInventory,
             $name,
-            $position
+            $position,
+            $color
         );
 
         $this->crates[$name] = $crate;
@@ -189,12 +196,15 @@ final class CrateManager
 
         $crate->despawn();
 
+        $block = $world->getBlock($position);
+
         if (
-            $world->getBlock($position)
-                ->hasSameTypeId(
-                    VanillaBlocks::CHEST()
-                )
+            $block instanceof ShulkerBox
+            || $block instanceof DyedShulkerBox
+            || $block->hasSameTypeId(VanillaBlocks::CHEST())
         ) {
+            // The chest branch only exists for crates placed before the
+            // shulker migration; spawn() has replaced them all since.
             $world->setBlock(
                 $position,
                 VanillaBlocks::AIR()
@@ -257,11 +267,6 @@ final class CrateManager
         }
 
         return $this->crates[$name] ?? null;
-    }
-
-    public function getReadOnlyInventory(): ReadOnlyInventory
-    {
-        return $this->readOnlyInventory;
     }
 
     /**
@@ -329,11 +334,16 @@ final class CrateManager
             $world
         );
 
+        $color = isset($data['color']) && is_string($data['color'])
+            ? Crate::colorFromName($data['color'])
+            : null;
+
         $crate = new Crate(
             $this->main,
             $this->readOnlyInventory,
             $name,
-            $position
+            $position,
+            $color
         );
 
         foreach (

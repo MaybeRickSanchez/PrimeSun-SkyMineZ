@@ -8,10 +8,11 @@ use AM\SkyMineZ\crate\Crate;
 use AM\SkyMineZ\crate\Key;
 use AM\SkyMineZ\crate\Reward;
 use AM\SkyMineZ\Main;
+use AM\SkyMineZ\config\Messages;
+use AM\SkyMineZ\useless\Items;
 use AM\SkyMineZ\useless\NumberFormatter;
 use pocketmine\command\CommandSender;
 use pocketmine\item\Item;
-use pocketmine\item\StringToItemParser;
 use pocketmine\player\Player;
 
 /**
@@ -58,6 +59,8 @@ final class CrateCommand extends BaseCommand
             'givekey', 'key' => $this->handleGiveKey($sender, $args),
             'open' => $this->handleOpen($sender, $args),
             'reward' => $this->handleReward($sender, $args),
+            'color' => $this->handleColor($sender, $args),
+            'menu' => $this->handleMenu($sender),
             'save' => $this->handleSave($sender),
             default => $this->handleHelp($sender)
         };
@@ -82,7 +85,7 @@ final class CrateCommand extends BaseCommand
                 if ($name === null || $name === '') {
                     $this->error(
                         $player,
-                        'Usage: /crate create <name>'
+                        Messages::get($this->plugin, Messages::CRATE_CREATE_USAGE)
                     );
 
                     return;
@@ -91,8 +94,7 @@ final class CrateCommand extends BaseCommand
                 if (!self::isValidName($name)) {
                     $this->error(
                         $player,
-                        'A crate name may only contain letters, digits, '
-                        . 'underscores and dashes.'
+                        Messages::get($this->plugin, Messages::CRATE_NAME_RULE)
                     );
 
                     return;
@@ -105,7 +107,7 @@ final class CrateCommand extends BaseCommand
                 if ($position === null) {
                     $this->error(
                         $player,
-                        'Look at a block first.'
+                        Messages::get($this->plugin, Messages::COMMON_LOOK_AT_BLOCK)
                     );
 
                     return;
@@ -129,12 +131,12 @@ final class CrateCommand extends BaseCommand
 
                 $this->success(
                     $player,
-                    "Created crate '{$name}' and registered its key."
+                    Messages::get($this->plugin, Messages::CRATE_CREATED, ['name' => $name])
                 );
 
                 $player->sendMessage(
                     $this->prefixed(
-                        '§7Give yourself a key with /crate givekey <player> ' . $name
+                        Messages::get($this->plugin, Messages::CRATE_GIVE_HINT, ['name' => $name])
                     )
                 );
             }
@@ -153,7 +155,7 @@ final class CrateCommand extends BaseCommand
         if ($name === null) {
             $this->error(
                 $sender,
-                'Usage: /crate remove <name>'
+                Messages::get($this->plugin, Messages::CRATE_REMOVE_USAGE)
             );
 
             return true;
@@ -175,11 +177,11 @@ final class CrateCommand extends BaseCommand
         $removed
             ? $this->success(
                 $sender,
-                "Removed crate '{$name}'."
+                Messages::get($this->plugin, Messages::CRATE_REMOVED, ['name' => $name])
             )
             : $this->error(
                 $sender,
-                "No crate named '{$name}'."
+                Messages::get($this->plugin, Messages::CRATE_UNKNOWN, ['name' => $name])
             );
 
         return true;
@@ -204,7 +206,7 @@ final class CrateCommand extends BaseCommand
                 if ($name === null) {
                     $this->error(
                         $player,
-                        'Usage: /crate move <name>'
+                        Messages::get($this->plugin, Messages::CRATE_MOVE_USAGE)
                     );
 
                     return;
@@ -216,6 +218,15 @@ final class CrateCommand extends BaseCommand
                     return;
                 }
 
+                if ($crate->isBusy() || $crate->hasPreviewViewers()) {
+                    $this->error(
+                        $player,
+                        Messages::get($this->plugin, Messages::CRATE_IN_USE)
+                    );
+
+                    return;
+                }
+
                 $position = TargetResolver::lookedAtPosition(
                     $player
                 );
@@ -223,11 +234,15 @@ final class CrateCommand extends BaseCommand
                 if ($position === null) {
                     $this->error(
                         $player,
-                        'Look at a block first.'
+                        Messages::get($this->plugin, Messages::COMMON_LOOK_AT_BLOCK)
                     );
 
                     return;
                 }
+
+                $color = $crate->getColor();
+                $keys = $crate->getKeys();
+                $rewards = $crate->getRewards();
 
                 /*
                  * Moving is a remove plus a create so the position index stays
@@ -249,17 +264,15 @@ final class CrateCommand extends BaseCommand
                 );
 
                 if ($recreated !== null) {
-                    foreach (
-                        $crate->getKeys() as $keyId
-                    ) {
+                    $recreated->setColor($color);
+
+                    foreach ($keys as $keyId) {
                         $recreated->addKey($keyId);
                     }
 
-                    foreach (
-                        $crate->getRewards() as $reward
-                    ) {
+                    foreach ($rewards as $reward) {
                         $recreated->addRewardObject(
-                            $reward
+                            clone $reward
                         );
                     }
                 }
@@ -270,7 +283,7 @@ final class CrateCommand extends BaseCommand
 
                 $this->success(
                     $player,
-                    "Moved crate '{$name}'."
+                    Messages::get($this->plugin, Messages::CRATE_MOVED, ['name' => $name])
                 );
             }
         );
@@ -284,7 +297,7 @@ final class CrateCommand extends BaseCommand
         if ($manager->count() === 0) {
             $this->info(
                 $sender,
-                'No crates are configured.'
+                Messages::get($this->plugin, Messages::CRATE_NONE)
             );
 
             return true;
@@ -292,7 +305,7 @@ final class CrateCommand extends BaseCommand
 
         $sender->sendMessage(
             $this->prefixed(
-                '§eCrates (' . $manager->count() . '):'
+                Messages::get($this->plugin, Messages::CRATE_LIST_TITLE, ['count' => $manager->count()])
             )
         );
 
@@ -303,14 +316,16 @@ final class CrateCommand extends BaseCommand
 
             $sender->sendMessage(
                 $this->prefixed(
-                    '§f' . $name . ' §8| §7'
-                    . $crate->getWorld()->getFolderName()
-                    . ' §8('
-                    . $position->getFloorX() . ', '
-                    . $position->getFloorY() . ', '
-                    . $position->getFloorZ() . ') §8| §7'
-                    . count($crate->getRewards()) . ' rewards §8| §7'
-                    . count($crate->getKeys()) . ' keys'
+                    Messages::get($this->plugin, Messages::CRATE_LIST_ROW,
+                        [
+                            'name' => $name,
+                            'world' => $crate->getWorld()->getFolderName(),
+                            'x' => $position->getFloorX(),
+                            'y' => $position->getFloorY(),
+                            'z' => $position->getFloorZ(),
+                            'rewards' => count($crate->getRewards()),
+                            'keys' => count($crate->getKeys())
+                        ])
                 )
             );
         }
@@ -334,7 +349,7 @@ final class CrateCommand extends BaseCommand
         if ($target === null) {
             $this->error(
                 $sender,
-                'That player is not online.'
+                Messages::get($this->plugin, Messages::COMMON_PLAYER_OFFLINE)
             );
 
             return true;
@@ -343,7 +358,7 @@ final class CrateCommand extends BaseCommand
         if ($crateName === null) {
             $this->error(
                 $sender,
-                'Usage: /crate givekey <player> <crate> [amount]'
+                Messages::get($this->plugin, Messages::CRATE_GIVEKEY_USAGE)
             );
 
             return true;
@@ -375,7 +390,7 @@ final class CrateCommand extends BaseCommand
 
         $this->success(
             $sender,
-            "Gave {$amount}x '{$keyId}' key to " . $target->getName() . '.'
+            Messages::get($this->plugin, Messages::CRATE_KEY_GIVEN_FULL, ['amount' => $amount, 'key' => $keyId, 'player' => $target->getName()])
         );
 
         return true;
@@ -400,7 +415,7 @@ final class CrateCommand extends BaseCommand
                 if ($name === null) {
                     $this->error(
                         $player,
-                        'Usage: /crate open <name>'
+                        Messages::get($this->plugin, Messages::CRATE_OPEN_USAGE)
                     );
 
                     return;
@@ -418,10 +433,57 @@ final class CrateCommand extends BaseCommand
 
                 $this->info(
                     $player,
-                    "Previewing crate '{$name}'. Sneak and right-click it to open."
+                    Messages::get($this->plugin, Messages::CRATE_PREVIEW_HINT, ['name' => $name])
                 );
             }
         );
+    }
+
+    /**
+     * @param list<string> $args
+     */
+    private function handleColor(
+        CommandSender $sender,
+        array $args
+    ): bool {
+        $name = $args[1] ?? null;
+        $color = isset($args[2]) ? Crate::colorFromName($args[2]) : null;
+
+        if ($name === null || $color === null) {
+            $this->error(
+                $sender,
+                Messages::get($this->plugin, Messages::CRATE_COLOR_USAGE, ['colors' => implode(', ', Crate::colorNames())])
+            );
+
+            return true;
+        }
+
+        $crate = $this->resolveCrate($sender, $name);
+
+        if ($crate === null) {
+            return true;
+        }
+
+        $crate->setColor($color);
+        $this->plugin->getCrateManager()->save($name);
+
+        $this->success($sender, Messages::get($this->plugin, Messages::CRATE_COLOR_SET, ['name' => $name, 'color' => strtolower($color->name)]));
+
+        return true;
+    }
+
+    private function handleMenu(
+        CommandSender $sender
+    ): bool {
+        if (!$sender instanceof Player) {
+            $this->error($sender, Messages::get($this->plugin, Messages::CRATE_MENU_ONLY));
+
+            return true;
+        }
+
+        (new CrateAdminForm($this->plugin))->send($sender);
+
+        return true;
     }
 
     private function handleSave(
@@ -440,7 +502,7 @@ final class CrateCommand extends BaseCommand
 
         $this->success(
             $sender,
-            'Saved all crates.'
+            Messages::get($this->plugin, Messages::CRATE_SAVED)
         );
 
         return true;
@@ -464,7 +526,7 @@ final class CrateCommand extends BaseCommand
         if ($crateName === null) {
             $this->error(
                 $sender,
-                'Usage: /crate reward <add|remove|list|weight|type> <crate> ...'
+                Messages::get($this->plugin, Messages::CRATE_REWARD_USAGE)
             );
 
             return true;
@@ -514,7 +576,7 @@ final class CrateCommand extends BaseCommand
             default:
                 $this->error(
                     $sender,
-                    'Unknown action. Use add, remove, list, weight or type.'
+                    Messages::get($this->plugin, Messages::CRATE_REWARD_BAD_ACTION)
                 );
 
                 return true;
@@ -534,8 +596,7 @@ final class CrateCommand extends BaseCommand
         if ($itemSpec === null) {
             $this->error(
                 $sender,
-                'Usage: /crate reward add <crate> <item[:meta][:count]> '
-                . '[type] [weight]'
+                Messages::get($this->plugin, Messages::CRATE_REWARD_ADD_USAGE)
             );
 
             return true;
@@ -548,8 +609,7 @@ final class CrateCommand extends BaseCommand
         if ($item === null) {
             $this->error(
                 $sender,
-                "Unknown item '{$itemSpec}'. Try /give style syntax, "
-                . 'e.g. diamond_sword or diamond 64.'
+                Messages::get($this->plugin, Messages::CRATE_REWARD_BAD_ITEM, ['item' => $itemSpec])
             );
 
             return true;
@@ -564,11 +624,7 @@ final class CrateCommand extends BaseCommand
         } catch (\InvalidArgumentException) {
             $this->error(
                 $sender,
-                "Unknown reward type '{$type}'. Use "
-                . implode(
-                    ', ',
-                    array_keys(Reward::types())
-                ) . '.'
+                Messages::get($this->plugin, Messages::CRATE_REWARD_BAD_TYPE, ['type' => $type, 'types' => implode(', ', array_keys(Reward::types()))])
             );
 
             return true;
@@ -605,8 +661,13 @@ final class CrateCommand extends BaseCommand
 
         $this->success(
             $sender,
-            "Added {$item->getCount()}x {$item->getName()} to '"
-            . $crate->getName() . "' as reward #{$index}."
+            Messages::get($this->plugin, Messages::CRATE_REWARD_ADDED2,
+                [
+                    'count' => $item->getCount(),
+                    'item' => $item->getName(),
+                    'crate' => $crate->getName(),
+                    'index' => $index
+                ])
         );
 
         return true;
@@ -630,7 +691,7 @@ final class CrateCommand extends BaseCommand
         ) {
             $this->error(
                 $sender,
-                'Reward index out of range.'
+                Messages::get($this->plugin, Messages::CRATE_REWARD_RANGE)
             );
 
             return true;
@@ -644,7 +705,7 @@ final class CrateCommand extends BaseCommand
 
         $this->success(
             $sender,
-            'Removed reward.'
+            Messages::get($this->plugin, Messages::CRATE_REWARD_REMOVED)
         );
 
         return true;
@@ -659,7 +720,7 @@ final class CrateCommand extends BaseCommand
         if ($rewards === []) {
             $this->info(
                 $sender,
-                "Crate '{$crate->getName()}' has no rewards."
+                Messages::get($this->plugin, Messages::CRATE_REWARD_NONE, ['crate' => $crate->getName()])
             );
 
             return true;
@@ -667,7 +728,7 @@ final class CrateCommand extends BaseCommand
 
         $sender->sendMessage(
             $this->prefixed(
-                '§eRewards of ' . $crate->getName() . ':'
+                Messages::get($this->plugin, Messages::CRATE_REWARD_TITLE, ['crate' => $crate->getName()])
             )
         );
 
@@ -678,19 +739,15 @@ final class CrateCommand extends BaseCommand
 
             $sender->sendMessage(
                 $this->prefixed(
-                    '§f#' . $index
-                    . ' §8| §7' . $reward->getType()
-                    . ' §8| §f' . $item->getCount() . 'x '
-                    . $item->getName()
-                    . ' §8| §7chance §e'
-                    . NumberFormatter::trim(
-                        $crate->getRewardChance(
-                            $index
-                        ) ?? 0.0
-                    ) . '% §8| §7weight §e'
-                    . NumberFormatter::trim(
-                        $reward->getWeight()
-                    )
+                    Messages::get($this->plugin, Messages::CRATE_REWARD_ROW,
+                        [
+                            'index' => $index,
+                            'type' => $reward->getType(),
+                            'count' => $item->getCount(),
+                            'item' => $item->getName(),
+                            'chance' => NumberFormatter::trim($crate->getRewardChance($index) ?? 0.0),
+                            'weight' => NumberFormatter::trim($reward->getWeight())
+                        ])
                 )
             );
         }
@@ -719,7 +776,7 @@ final class CrateCommand extends BaseCommand
         ) {
             $this->error(
                 $sender,
-                'Usage: /crate reward weight <crate> <index> <weight>'
+                Messages::get($this->plugin, Messages::CRATE_REWARD_WEIGHT_USAGE)
             );
 
             return true;
@@ -745,7 +802,7 @@ final class CrateCommand extends BaseCommand
 
         $this->success(
             $sender,
-            'Weight updated.'
+            Messages::get($this->plugin, Messages::CRATE_WEIGHT_SET)
         );
 
         return true;
@@ -770,7 +827,7 @@ final class CrateCommand extends BaseCommand
         ) {
             $this->error(
                 $sender,
-                'Usage: /crate reward type <crate> <index> <type>'
+                Messages::get($this->plugin, Messages::CRATE_REWARD_TYPE_USAGE)
             );
 
             return true;
@@ -796,7 +853,7 @@ final class CrateCommand extends BaseCommand
 
         $this->success(
             $sender,
-            'Type updated.'
+            Messages::get($this->plugin, Messages::CRATE_TYPE_SET)
         );
 
         return true;
@@ -819,7 +876,7 @@ final class CrateCommand extends BaseCommand
         if ($crate === null) {
             $this->error(
                 $sender,
-                "No crate named '" . ($name ?? '') . "'."
+                Messages::get($this->plugin, Messages::CRATE_UNKNOWN, ['name' => (string) ($name ?? '')])
             );
 
             return null;
@@ -832,23 +889,25 @@ final class CrateCommand extends BaseCommand
         CommandSender $sender
     ): bool {
         $lines = [
-            '§e/crate create <name> §7- create a crate on the block you look at',
-            '§e/crate remove <name> §7- delete a crate',
-            '§e/crate move <name> §7- move a crate to the block you look at',
-            '§e/crate list §7- list all crates',
-            '§e/crate givekey <player> <crate> [amount] §7- give a key',
-            '§e/crate open <name> §7- preview a crate',
-            '§e/crate reward add <crate> <item> [type] [weight] §7- add a reward',
-            '§e/crate reward remove <crate> <index> §7- remove a reward',
-            '§e/crate reward list <crate> §7- list rewards and their chances',
-            '§e/crate reward weight <crate> <index> <weight> §7- change a weight',
-            '§e/crate reward type <crate> <index> <type> §7- change a rarity',
-            '§e/crate save §7- write crates.json now'
+            Messages::get($this->plugin, Messages::CRATE_HELP_CREATE),
+            Messages::get($this->plugin, Messages::CRATE_HELP_REMOVE),
+            Messages::get($this->plugin, Messages::CRATE_HELP_MOVE),
+            Messages::get($this->plugin, Messages::CRATE_HELP_LIST),
+            Messages::get($this->plugin, Messages::CRATE_HELP_GIVEKEY),
+            Messages::get($this->plugin, Messages::CRATE_HELP_OPEN),
+            Messages::get($this->plugin, Messages::CRATE_HELP_REWARD_ADD),
+            Messages::get($this->plugin, Messages::CRATE_HELP_REWARD_REMOVE),
+            Messages::get($this->plugin, Messages::CRATE_HELP_REWARD_LIST),
+            Messages::get($this->plugin, Messages::CRATE_HELP_REWARD_WEIGHT),
+            Messages::get($this->plugin, Messages::CRATE_HELP_REWARD_TYPE),
+            Messages::get($this->plugin, Messages::CRATE_HELP_COLOR),
+            Messages::get($this->plugin, Messages::CRATE_HELP_MENU),
+            Messages::get($this->plugin, Messages::CRATE_HELP_SAVE)
         ];
 
         $sender->sendMessage(
             $this->prefixed(
-                '§eSkyMineZ crates'
+                Messages::get($this->plugin, Messages::CRATE_HELP_TITLE)
             )
         );
 
@@ -871,18 +930,6 @@ final class CrateCommand extends BaseCommand
     public static function parseItem(
         string $spec
     ): ?Item {
-        try {
-            $item = StringToItemParser::getInstance()->parse(
-                $spec
-            );
-        } catch (\Throwable) {
-            return null;
-        }
-
-        if ($item === null || $item->isNull()) {
-            return null;
-        }
-
-        return $item;
+        return Items::parse($spec);
     }
 }

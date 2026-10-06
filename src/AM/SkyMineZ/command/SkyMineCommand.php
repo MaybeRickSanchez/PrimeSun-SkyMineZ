@@ -8,6 +8,8 @@ use AM\SkyMineZ\economy\BaseEconomy;
 use AM\SkyMineZ\economy\EconomyChangeEventReason;
 use AM\SkyMineZ\lagmaker\LagMaker;
 use AM\SkyMineZ\Main;
+use AM\SkyMineZ\config\Messages;
+use AM\SkyMineZ\wand\PositionWand;
 use AM\SkyMineZ\useless\NumberFormatter;
 use pocketmine\command\CommandSender;
 use pocketmine\player\Player;
@@ -28,7 +30,7 @@ final class SkyMineCommand extends BaseCommand
             $plugin,
             'skymine',
             'SkyMineZ main command',
-            '/skymine <menu|pvp|hud|stats|money|gold|pos1|pos2|reload|lagmaker|save> ...',
+            '/skymine <menu|pvp|hud|stats|money|gold|pos1|pos2|wand|reload|lagmaker|save> ...',
             ['skyminesz', 'smz'],
             Main::PERMISSION_USE
         );
@@ -68,6 +70,7 @@ final class SkyMineCommand extends BaseCommand
             'pos1' => $this->handlePosition($sender, $args, 'pos1'),
             'pos2' => $this->handlePosition($sender, $args, 'pos2'),
             'reset' => $this->handleResetSelection($sender),
+            'wand' => $this->handleWand($sender),
             'reload' => $this->handleReload($sender),
             'lagmaker' => $this->handleLagMaker($sender, $args),
             'save' => $this->handleSave($sender),
@@ -81,7 +84,7 @@ final class SkyMineCommand extends BaseCommand
         if (!$sender instanceof Player) {
             $this->error(
                 $sender,
-                'The menu is only available in-game.'
+                Messages::get($this->plugin, Messages::SKYMINE_MENU_ONLY)
             );
 
             return true;
@@ -101,25 +104,33 @@ final class SkyMineCommand extends BaseCommand
         CommandSender $sender,
         array $args
     ): bool {
-        $requested = strtolower(
-            $args[1] ?? 'toggle'
-        );
+        $raw1 = strtolower($args[1] ?? 'toggle');
+        $raw2 = strtolower($args[2] ?? '');
 
-        /*
-         * PvP lives in a live session array, so the target has to be online.
-         */
-        $target = ($args[1] ?? null) !== null && !in_array(
-            $requested,
-            ['on', 'off', 'toggle', 'true', 'false'],
-            true
-        )
-            ? $this->plugin->getServer()->getPlayerExact($requested)
-            : ($sender instanceof Player ? $sender : null);
+        $keywords = ['on', 'off', 'toggle', 'true', 'false'];
+
+        // Forms: /skymine pvp [on|off], /skymine pvp <player>, /skymine pvp <player> <on|off|toggle>.
+        if (in_array($raw1, $keywords, true)) {
+            $target = ($sender instanceof Player) ? $sender : null;
+            $requested = $raw1;
+        } elseif (($playerArg = $this->plugin->getServer()->getPlayerExact($args[1])) !== null) {
+            $target = $playerArg;
+            $requested = in_array($raw2, $keywords, true) ? $raw2 : 'toggle';
+        } elseif ($sender instanceof Player) {
+            // Unknown first arg on the non-admin path: treat as toggle-self
+            // rather than "player not online" spam.
+            $target = $sender;
+            $requested = in_array($raw1, $keywords, true) ? $raw1 : 'toggle';
+        } else {
+            $this->error($sender, Messages::get($this->plugin, Messages::COMMON_PLAYER_OFFLINE));
+
+            return true;
+        }
 
         if ($target === null) {
             $this->error(
                 $sender,
-                'That player is not online.'
+                Messages::get($this->plugin, Messages::COMMON_PLAYER_OFFLINE)
             );
 
             return true;
@@ -127,14 +138,25 @@ final class SkyMineCommand extends BaseCommand
 
         $manager = $this->plugin->getPvpManager();
 
-        if (!$this->testPermission($sender)) {
+        if (!$sender->hasPermission(Main::PERMISSION_ADMIN)) {
+            // Normal players may only change their own flag, never another's.
+            if ($sender instanceof Player && $target->getName() !== $sender->getName()) {
+                $this->error($sender, Messages::get($this->plugin, Messages::SKYMINE_PVP_SELF_ONLY));
+
+                return true;
+            }
+
             $newState = $manager->toggle(
                 $target->getName()
             );
 
             $this->success(
                 $target,
-                'PvP is now ' . ($newState ? 'ON' : 'OFF') . '.'
+                Messages::get(
+                    $this->plugin,
+                    Messages::SKYMINE_PVP_NOW,
+                    ['state' => $newState ? 'ON' : 'OFF']
+                )
             );
 
             return true;
@@ -153,8 +175,11 @@ final class SkyMineCommand extends BaseCommand
 
         $this->success(
             $sender,
-            'PvP for ' . $target->getName() . ' is '
-            . ($result ? 'ON' : 'OFF') . '.'
+            Messages::get(
+                $this->plugin,
+                Messages::SKYMINE_PVP_FOR,
+                ['player' => $target->getName(), 'state' => $result ? 'ON' : 'OFF']
+            )
         );
 
         return true;
@@ -166,7 +191,7 @@ final class SkyMineCommand extends BaseCommand
         if (!$sender instanceof Player) {
             $this->error(
                 $sender,
-                'The sidebar can only be toggled in-game.'
+                Messages::get($this->plugin, Messages::SKYMINE_HUD_ONLY)
             );
 
             return true;
@@ -178,7 +203,11 @@ final class SkyMineCommand extends BaseCommand
 
         $this->success(
             $sender,
-            'Sidebar ' . ($enabled ? 'enabled' : 'disabled') . '.'
+            Messages::get(
+                $this->plugin,
+                Messages::SKYMINE_HUD_STATE,
+                ['state' => $enabled ? 'enabled' : 'disabled']
+            )
         );
 
         return true;
@@ -206,50 +235,60 @@ final class SkyMineCommand extends BaseCommand
 
         $sender->sendMessage(
             $this->prefixed(
-                '§eStats of ' . $targetName
+                Messages::get($this->plugin, Messages::SKYMINE_STATS_TITLE, ['player' => $targetName])
             )
         );
         $sender->sendMessage(
             $this->prefixed(
-                '§7Mined: §f' . NumberFormatter::short(
-                    $miner->getMined()
+                Messages::get(
+                    $this->plugin,
+                    Messages::SKYMINE_STATS_MINED,
+                    ['mined' => NumberFormatter::short($miner->getMined())]
                 )
             )
         );
         $sender->sendMessage(
             $this->prefixed(
-                '§7Deaths: §f' . NumberFormatter::short(
-                    $miner->getDeaths()
+                Messages::get(
+                    $this->plugin,
+                    Messages::SKYMINE_STATS_DEATHS,
+                    ['deaths' => NumberFormatter::short($miner->getDeaths())]
                 )
             )
         );
         $sender->sendMessage(
             $this->prefixed(
-                '§7Kills: §f' . NumberFormatter::short(
-                    $miner->getKills()
+                Messages::get(
+                    $this->plugin,
+                    Messages::SKYMINE_STATS_KILLS,
+                    ['kills' => NumberFormatter::short($miner->getKills())]
                 )
             )
         );
         $sender->sendMessage(
             $this->prefixed(
-                '§7Kill streak: §f' . $miner->getKillStreak()
-            )
-        );
-        $sender->sendMessage(
-            $this->prefixed(
-                '§7Money: §f' . NumberFormatter::short(
-                    $this->plugin->getMoneyEconomy()->get(
-                        $targetName
-                    )
+                Messages::get(
+                    $this->plugin,
+                    Messages::SKYMINE_STATS_STREAK,
+                    ['streak' => $miner->getKillStreak()]
                 )
             )
         );
         $sender->sendMessage(
             $this->prefixed(
-                '§7Gold: §f' . NumberFormatter::short(
-                    $this->plugin->getGoldEconomy()->get(
-                        $targetName
-                    )
+                Messages::get(
+                    $this->plugin,
+                    Messages::SKYMINE_STATS_MONEY,
+                    ['money' => NumberFormatter::short($this->plugin->getMoneyEconomy()->get($targetName))]
+                )
+            )
+        );
+        $sender->sendMessage(
+            $this->prefixed(
+                Messages::get(
+                    $this->plugin,
+                    Messages::SKYMINE_STATS_GOLD,
+                    ['gold' => NumberFormatter::short($this->plugin->getGoldEconomy()->get($targetName))]
                 )
             )
         );
@@ -268,7 +307,7 @@ final class SkyMineCommand extends BaseCommand
         if (!$this->testPermission($sender)) {
             $this->error(
                 $sender,
-                'You do not have permission to manage balances.'
+                Messages::get($this->plugin, Messages::SKYMINE_ECONOMY_NO_PERM)
             );
 
             return true;
@@ -287,7 +326,11 @@ final class SkyMineCommand extends BaseCommand
         if ($targetName === null) {
             $this->error(
                 $sender,
-                'Usage: /' . $economy->getType() . ' <give|take|set|check> <player> [amount]'
+                Messages::get(
+                    $this->plugin,
+                    Messages::SKYMINE_ECONOMY_USAGE,
+                    ['type' => $economy->getType()]
+                )
             );
 
             return true;
@@ -298,8 +341,15 @@ final class SkyMineCommand extends BaseCommand
         if ($action === 'check') {
             $this->success(
                 $sender,
-                $targetName . ' has ' . NumberFormatter::short($current)
-                . ' ' . $economy->getType() . '.'
+                Messages::get(
+                    $this->plugin,
+                    Messages::SKYMINE_ECONOMY_CHECK,
+                    [
+                        'player' => $targetName,
+                        'balance' => NumberFormatter::short($current),
+                        'type' => $economy->getType()
+                    ]
+                )
             );
 
             return true;
@@ -312,7 +362,7 @@ final class SkyMineCommand extends BaseCommand
         if ($amount <= 0) {
             $this->error(
                 $sender,
-                'The amount must be greater than 0.'
+                Messages::get($this->plugin, Messages::SKYMINE_ECONOMY_AMOUNT)
             );
 
             return true;
@@ -343,7 +393,7 @@ final class SkyMineCommand extends BaseCommand
         if ($new < 0) {
             $this->error(
                 $sender,
-                'Use give, take, set or check.'
+                Messages::get($this->plugin, Messages::SKYMINE_ECONOMY_ACTIONS)
             );
 
             return true;
@@ -351,8 +401,15 @@ final class SkyMineCommand extends BaseCommand
 
         $this->success(
             $sender,
-            $targetName . ' now has ' . NumberFormatter::short($new)
-            . ' ' . $economy->getType() . '.'
+            Messages::get(
+                $this->plugin,
+                Messages::SKYMINE_ECONOMY_SET,
+                [
+                    'player' => $targetName,
+                    'balance' => NumberFormatter::short($new),
+                    'type' => $economy->getType()
+                ]
+            )
         );
 
         $player = $this->plugin->getServer()->getPlayerExact(
@@ -367,8 +424,11 @@ final class SkyMineCommand extends BaseCommand
         ) {
             $player->sendMessage(
                 $this->prefixed(
-                    '§aYour ' . $economy->getType() . ' balance changed to '
-                    . NumberFormatter::short($new) . '.'
+                    Messages::get(
+                        $this->plugin,
+                        Messages::SKYMINE_ECONOMY_CHANGED,
+                        ['type' => $economy->getType(), 'balance' => NumberFormatter::short($new)]
+                    )
                 )
             );
         }
@@ -387,7 +447,7 @@ final class SkyMineCommand extends BaseCommand
         if (!$sender instanceof Player) {
             $this->error(
                 $sender,
-                'Selections can only be set in-game.'
+                Messages::get($this->plugin, Messages::SKYMINE_POS_ONLY)
             );
 
             return true;
@@ -413,10 +473,49 @@ final class SkyMineCommand extends BaseCommand
 
         $this->success(
             $sender,
-            $which . ' set to ' . $position->getWorld()->getFolderName()
-            . ' (' . $position->getFloorX() . ', '
-            . $position->getFloorY() . ', '
-            . $position->getFloorZ() . ')'
+            Messages::get(
+                $this->plugin,
+                Messages::SKYMINE_POS_SET,
+                [
+                    'which' => $which,
+                    'world' => $position->getWorld()->getFolderName(),
+                    'x' => $position->getFloorX(),
+                    'y' => $position->getFloorY(),
+                    'z' => $position->getFloorZ()
+                ]
+            )
+        );
+
+        return true;
+    }
+
+    private function handleWand(
+        CommandSender $sender
+    ): bool {
+        if (!$sender instanceof Player) {
+            $this->error(
+                $sender,
+                Messages::get($this->plugin, Messages::SKYMINE_WAND_ONLY)
+            );
+
+            return true;
+        }
+
+        if (!$this->testPermission($sender)) {
+            return true;
+        }
+
+        foreach (
+            $sender->getInventory()->addItem(
+                PositionWand::create()
+            ) as $leftover
+        ) {
+            $sender->dropItem($leftover);
+        }
+
+        $this->success(
+            $sender,
+            Messages::get($this->plugin, Messages::SKYMINE_WAND_GIVEN)
         );
 
         return true;
@@ -428,7 +527,7 @@ final class SkyMineCommand extends BaseCommand
         if (!$sender instanceof Player) {
             $this->error(
                 $sender,
-                'Selections can only be cleared in-game.'
+                Messages::get($this->plugin, Messages::SKYMINE_SELECTION_CLEAR_ONLY)
             );
 
             return true;
@@ -440,7 +539,7 @@ final class SkyMineCommand extends BaseCommand
 
         $this->success(
             $sender,
-            'Selection cleared.'
+            Messages::get($this->plugin, Messages::SKYMINE_SELECTION_CLEARED)
         );
 
         return true;
@@ -466,7 +565,7 @@ final class SkyMineCommand extends BaseCommand
 
         $this->success(
             $sender,
-            'SkyMineZ reloaded.'
+            Messages::get($this->plugin, Messages::SKYMINE_RELOADED)
         );
 
         return true;
@@ -492,13 +591,15 @@ final class SkyMineCommand extends BaseCommand
         if ($action === 'status') {
             $this->info(
                 $sender,
-                'Enabled: ' . ($lagMaker->isEnabled() ? 'yes' : 'no')
-                . ' | mode: ' . $lagMaker->getMode()
-                . ' | auto stack: '
-                . ($this->plugin->getConfigManager()->getBool(
-                    'lagmaker.auto-stack',
-                    true
-                ) ? 'yes' : 'no')
+                Messages::get(
+                    $this->plugin,
+                    Messages::SKYMINE_LAG_STATUS,
+                    [
+                        'enabled' => $lagMaker->isEnabled() ? 'yes' : 'no',
+                        'mode' => $lagMaker->getMode(),
+                        'stack' => $this->plugin->getConfigManager()->getBool('lagmaker.auto-stack', true) ? 'yes' : 'no'
+                    ]
+                )
             );
 
             return true;
@@ -511,7 +612,11 @@ final class SkyMineCommand extends BaseCommand
 
             $this->success(
                 $sender,
-                'Lag protection ' . ($enabled ? 'enabled' : 'disabled') . '.'
+                Messages::get(
+                    $this->plugin,
+                    Messages::SKYMINE_LAG_TOGGLED,
+                    ['state' => $enabled ? 'enabled' : 'disabled']
+                )
             );
 
             return true;
@@ -535,7 +640,7 @@ final class SkyMineCommand extends BaseCommand
             ) {
                 $this->error(
                     $sender,
-                    'Mode must be off, ttl or all.'
+                    Messages::get($this->plugin, Messages::SKYMINE_LAG_MODE)
                 );
 
                 return true;
@@ -549,7 +654,7 @@ final class SkyMineCommand extends BaseCommand
 
             $this->success(
                 $sender,
-                "Cleanup mode set to '{$mode}'."
+                Messages::get($this->plugin, Messages::SKYMINE_LAG_MODE_SET, ['mode' => $mode])
             );
 
             return true;
@@ -557,7 +662,7 @@ final class SkyMineCommand extends BaseCommand
 
         $this->error(
             $sender,
-            'Use /skymine lagmaker <status|toggle|cleanup <mode>>'
+            Messages::get($this->plugin, Messages::SKYMINE_LAG_USAGE)
         );
 
         return true;
@@ -583,7 +688,7 @@ final class SkyMineCommand extends BaseCommand
 
         $this->success(
             $sender,
-            'Saved every SkyMineZ store.'
+            Messages::get($this->plugin, Messages::SKYMINE_SAVED)
         );
 
         return true;
@@ -606,7 +711,7 @@ final class SkyMineCommand extends BaseCommand
             if (!$sender instanceof Player) {
                 $this->error(
                     $sender,
-                    'Name a player when running this from the console.'
+                    Messages::get($this->plugin, Messages::SKYMINE_STATS_CONSOLE)
                 );
 
                 return null;
@@ -639,21 +744,22 @@ final class SkyMineCommand extends BaseCommand
         CommandSender $sender
     ): bool {
         $lines = [
-            '§e/skymine menu §7- open the main menu',
-            '§e/skymine pvp [on|off] §7- toggle your PvP',
-            '§e/skymine hud §7- toggle the sidebar',
-            '§e/skymine stats [player] §7- show mining stats',
-            '§e/skymine money <give|take|set|check> <player> [amount]',
-            '§e/skymine gold <give|take|set|check> <player> [amount]',
-            '§e/skymine pos1 §7- select the first corner',
-            '§e/skymine pos2 §7- select the second corner',
-            '§e/skymine lagmaker <status|toggle|cleanup <mode>>',
-            '§e/skymine reload §7- re-read config.yml and reload the data',
-            '§e/skymine save §7- write every store now'
+            Messages::get($this->plugin, Messages::SKYMINE_HELP_MENU),
+            Messages::get($this->plugin, Messages::SKYMINE_HELP_PVP),
+            Messages::get($this->plugin, Messages::SKYMINE_HELP_HUD),
+            Messages::get($this->plugin, Messages::SKYMINE_HELP_STATS),
+            Messages::get($this->plugin, Messages::SKYMINE_HELP_MONEY),
+            Messages::get($this->plugin, Messages::SKYMINE_HELP_GOLD),
+            Messages::get($this->plugin, Messages::SKYMINE_HELP_POS1),
+            Messages::get($this->plugin, Messages::SKYMINE_HELP_POS2),
+            Messages::get($this->plugin, Messages::SKYMINE_HELP_WAND),
+            Messages::get($this->plugin, Messages::SKYMINE_HELP_LAGMAKER),
+            Messages::get($this->plugin, Messages::SKYMINE_HELP_RELOAD),
+            Messages::get($this->plugin, Messages::SKYMINE_HELP_SAVE)
         ];
 
         $sender->sendMessage(
-            $this->prefixed('§eSkyMineZ')
+            $this->prefixed(Messages::get($this->plugin, Messages::SKYMINE_HELP_TITLE))
         );
 
         foreach (

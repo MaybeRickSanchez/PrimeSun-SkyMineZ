@@ -105,23 +105,24 @@ final class ScoreHud implements Listener
      */
     public function restart(): void
     {
-        foreach (
-            $this->lines as $name => $_
-        ) {
-            $player = $this->main->getServer()->getPlayerExact(
-                $name
-            );
+        // Keys in $lines are lower-case, but getPlayerExact() is
+        // case-sensitive, so resolve through the online list instead of the
+        // key to never miss mixed-case names.
+        foreach ($this->main->getServer()->getOnlinePlayers() as $player) {
+            $name = $this->key($player);
 
-            if ($player !== null) {
-                $this->createScoreboard(
-                    $player,
-                    $this->titleFor($this->modes[$name] ?? self::MODE_LOBBY),
-                    $this->linesFor(
-                        $player,
-                        $this->modes[$name] ?? self::MODE_LOBBY
-                    )
-                );
+            if (!isset($this->lines[$name])) {
+                continue;
             }
+
+            $this->createScoreboard(
+                $player,
+                $this->titleFor($this->modes[$name] ?? self::MODE_LOBBY),
+                $this->linesFor(
+                    $player,
+                    $this->modes[$name] ?? self::MODE_LOBBY
+                )
+            );
         }
 
         $this->start();
@@ -142,15 +143,29 @@ final class ScoreHud implements Listener
      */
     public function tick(): void
     {
+        $online = $this->main->getServer()->getOnlinePlayers();
+
+        if ($online === []) {
+            return;
+        }
+
+        // Scale the slice so a pass always finishes before the next tick:
+        // otherwise two SpreadTasks overlap and send duplicate/out-of-order
+        // packets on busy servers.
+        $interval = $this->getUpdateTicks();
+        $perTick = max(
+            $this->getPlayersPerTick(),
+            (int) ceil(count($online) / max(1, $interval))
+        );
+
         SpreadTask::spread(
             $this->main,
             /*
              * No array_values() here: SpreadTask::flatten() already reindexes,
              * so one copy per pass is enough.
              */
-            $this->main->getServer()
-                ->getOnlinePlayers(),
-            $this->getPlayersPerTick(),
+            $online,
+            $perTick,
             function(mixed $player): void {
                 if ($player instanceof Player) {
                     $this->updatePlayer($player);
@@ -352,7 +367,7 @@ final class ScoreHud implements Listener
 
         if (ScoreHudUpdateEvent::hasHandlers()) {
             $event = new ScoreHudUpdateEvent(
-                $name,
+                $player->getName(),
                 $title,
                 $lines
             );
@@ -432,7 +447,8 @@ final class ScoreHud implements Listener
         array $oldLines,
         array $newLines
     ): void {
-        $entries = [];
+        $changes = [];
+        $removals = [];
 
         $max = max(
             count($oldLines),
@@ -462,25 +478,49 @@ final class ScoreHud implements Listener
 
             $entry->objectiveName = self::OBJECTIVE;
             $entry->type = ScorePacketEntry::TYPE_FAKE_PLAYER;
+            $entry->scoreboardId = $index + 1;
+
+            if ($new === null) {
+                // Row disappeared: tell the client to drop it, not to show
+                // stale text with a bogus (<=0) score.
+                $entry->customName = $this->makeUniqueLine(
+                    (string) $old,
+                    $index
+                );
+                $entry->score = count($oldLines) - $index;
+
+                $removals[] = $entry;
+
+                continue;
+            }
+
             $entry->customName = $this->makeUniqueLine(
-                $new ?? (string) $old,
+                $new,
                 $index
             );
 
             $entry->score = count($newLines) - $index;
 
-            $entry->scoreboardId = $index + 1;
-
-            $entries[] = $entry;
+            $changes[] = $entry;
         }
 
-        if ($entries === []) {
+        if ($removals !== []) {
+            $removePacket = new SetScorePacket();
+            $removePacket->type = SetScorePacket::TYPE_REMOVE;
+            $removePacket->entries = $removals;
+
+            $player->getNetworkSession()->sendDataPacket(
+                $removePacket
+            );
+        }
+
+        if ($changes === []) {
             return;
         }
 
         $packet = new SetScorePacket();
         $packet->type = SetScorePacket::TYPE_CHANGE;
-        $packet->entries = $entries;
+        $packet->entries = $changes;
 
         $player->getNetworkSession()->sendDataPacket(
             $packet

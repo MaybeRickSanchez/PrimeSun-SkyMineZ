@@ -36,11 +36,6 @@ abstract class BaseEconomy implements Economy
      */
     protected string $type = 'balance';
 
-    public function getDefaultBalance(): int
-    {
-        return $this->defaultBalance;
-    }
-
     public function setDefaultBalance(int $defaultBalance): void
     {
         $this->defaultBalance = max(

@@ -4,7 +4,8 @@ declare(strict_types=1);
 
 namespace AM\SkyMineZ\command;
 
-use pocketmine\math\Vector3;
+use pocketmine\event\Listener;
+use pocketmine\event\player\PlayerQuitEvent;
 use pocketmine\player\Player;
 use pocketmine\world\Position;
 
@@ -14,11 +15,18 @@ use pocketmine\world\Position;
  * commands then read them.
  *
  * Selections are session only; there is no reason to persist them.
+ * Corners are floored to block coords on store so fractional player
+ * positions never cause off-by-one fill/contain mismatches.
  */
-final class SelectionManager
+final class SelectionManager implements Listener
 {
     /** @var array<string, array{pos1: Position|null, pos2: Position|null}> */
     private array $selections = [];
+
+    public function onQuit(PlayerQuitEvent $event): void
+    {
+        $this->clear($event->getPlayer());
+    }
 
     public function setPos1(
         Player $player,
@@ -26,7 +34,12 @@ final class SelectionManager
     ): void {
         $name = $this->key($player);
 
-        $this->selections[$name]['pos1'] = $position;
+        $this->selections[$name]['pos1'] = new Position(
+            (float) $position->getFloorX(),
+            (float) $position->getFloorY(),
+            (float) $position->getFloorZ(),
+            $position->getWorld()
+        );
     }
 
     public function setPos2(
@@ -35,7 +48,12 @@ final class SelectionManager
     ): void {
         $name = $this->key($player);
 
-        $this->selections[$name]['pos2'] = $position;
+        $this->selections[$name]['pos2'] = new Position(
+            (float) $position->getFloorX(),
+            (float) $position->getFloorY(),
+            (float) $position->getFloorZ(),
+            $position->getWorld()
+        );
     }
 
     public function getPos1(
@@ -73,7 +91,9 @@ final class SelectionManager
             return null;
         }
 
-        if ($pos1->getWorld() !== $pos2->getWorld()) {
+        // Compare by folder name, not object identity: after a world reload
+        // the manager hands out a new World instance for the same folder.
+        if ($pos1->getWorld()->getFolderName() !== $pos2->getWorld()->getFolderName()) {
             return null;
         }
 

@@ -5,10 +5,10 @@ declare(strict_types=1);
 namespace AM\SkyMineZ\crate;
 
 use AM\SkyMineZ\Main;
+use AM\SkyMineZ\config\Messages;
 use pocketmine\event\Listener;
 use pocketmine\event\block\BlockBreakEvent;
 use pocketmine\event\block\BlockExplodeEvent;
-use pocketmine\event\block\ChestPairEvent;
 use pocketmine\event\inventory\InventoryCloseEvent;
 use pocketmine\event\player\PlayerInteractEvent;
 use pocketmine\event\player\PlayerJoinEvent;
@@ -18,9 +18,10 @@ use pocketmine\scheduler\ClosureTask;
 /**
  * Wires crates to player interaction.
  *
- * Right-click opens a crate (and consumes exactly one key), sneak + right-click
- * opens the read-only reward preview, and the crate block itself cannot be
- * broken or merged with a neighbour.
+ * Right-click runs the crate-opening flow in a virtual window (never the
+ * shulker itself), sneak + right-click previews the rewards, and the crate
+ * block itself cannot be broken or blown up. Keys are consumed exactly once,
+ * and only after the opening provably started.
  */
 final class CrateListener implements Listener
 {
@@ -59,7 +60,7 @@ final class CrateListener implements Listener
 
         if ($crate->isBusy()) {
             $player->sendMessage(
-                '§eThis crate is currently opening.'
+                Messages::get($this->main, Messages::CRATE_BUSY)
             );
 
             return;
@@ -71,25 +72,30 @@ final class CrateListener implements Listener
             return;
         }
 
-        $inventory = $player->getInventory();
-        $item = $inventory->getItemInHand();
+        $config = $this->main->getConfigManager();
+        $keyId = null;
 
-        $keyId = Key::getId($item);
+        if ($config->getBool('crates.require-key', true)) {
+            $inventory = $player->getInventory();
+            $item = $inventory->getItemInHand();
 
-        if ($keyId === null) {
-            $player->sendMessage(
-                '§cYou need a key to open this crate.'
-            );
+            $keyId = Key::getId($item);
 
-            return;
-        }
+            if ($keyId === null) {
+                $player->sendMessage(
+                    Messages::get($this->main, Messages::CRATE_NO_KEY)
+                );
 
-        if (!$crate->hasKey($keyId)) {
-            $player->sendMessage(
-                '§cThis key cannot open this crate.'
-            );
+                return;
+            }
 
-            return;
+            if (!$crate->hasKey($keyId)) {
+                $player->sendMessage(
+                    Messages::get($this->main, Messages::CRATE_WRONG_KEY)
+                );
+
+                return;
+            }
         }
 
         if (!$crate->open($player)) {
@@ -98,11 +104,22 @@ final class CrateListener implements Listener
 
         /*
          * Only now that the opening is guaranteed to start does the key leave
-         * the player's hand.
+         * the player's hand — and only when the server is configured to eat
+         * keys. Either flag off means free openings.
          */
-        $inventory->setItemInHand(
-            $item->pop()
-        );
+        if (
+            $keyId !== null
+            && $config->getBool('crates.consume-key', true)
+        ) {
+            $inventory = $player->getInventory();
+            $item = $inventory->getItemInHand();
+
+            if (Key::getId($item) === $keyId) {
+                $inventory->setItemInHand(
+                    $item->pop()
+                );
+            }
+        }
     }
 
     public function onInventoryClose(
@@ -114,11 +131,11 @@ final class CrateListener implements Listener
         foreach (
             $this->crateManager->getCrates() as $crate
         ) {
-            if ($crate->getInventory() !== $inventory) {
+            if (!$crate->isMyWindow($inventory)) {
                 continue;
             }
 
-            $crate->handleClose($player);
+            $crate->handleClose($player, $inventory);
 
             return;
         }
@@ -139,7 +156,7 @@ final class CrateListener implements Listener
         $event->cancel();
 
         $event->getPlayer()->sendMessage(
-            '§cYou cannot break a crate. Use /crate remove <name>.'
+            Messages::get($this->main, Messages::CRATE_NO_BREAK)
         );
     }
 
@@ -165,27 +182,6 @@ final class CrateListener implements Listener
             $event->cancel();
 
             return;
-        }
-    }
-
-    /**
-     * Stops a crate chest from pairing with a normal chest, which would silently
-     * merge their inventories and let players steal rewards.
-     */
-    public function onChestPair(
-        ChestPairEvent $event
-    ): void {
-        if (
-            $this->crateManager->getCrateAt(
-                $event->getLeft()
-                    ->getPosition()
-            ) !== null
-            || $this->crateManager->getCrateAt(
-                $event->getRight()
-                    ->getPosition()
-            ) !== null
-        ) {
-            $event->cancel();
         }
     }
 

@@ -71,6 +71,26 @@ class CollisionBox
             && $pos->z <= $this->maxZ;
     }
 
+    /**
+     * World-aware containment: a Position in another world is never inside,
+     * even if its coordinates overlap. Use this for player checks where the
+     * world identity matters (post-reload worlds, multi-world servers).
+     */
+    public function isInWorld(Vector3 $pos, ?World $world = null): bool
+    {
+        if ($world !== null && $world !== $this->world) {
+            return false;
+        }
+
+        if ($pos instanceof \pocketmine\world\Position) {
+            if ($pos->getWorld() !== $this->world) {
+                return false;
+            }
+        }
+
+        return $this->isIn($pos);
+    }
+
     private ?Vector3 $center = null;
 
     /**
@@ -93,35 +113,38 @@ class CollisionBox
      * Normalized integer bounds. MineFillTask reads these every tick instead of
      * re-running min()/max() over the corners, which also keeps the per-tick
      * path free of method-call chains into getPos1()/getPos2().
+     *
+     * floor() (not truncation) so negative coordinates resolve to the same
+     * block the game itself addresses with getFloorX()/getFloorY()/getFloorZ().
      */
     public function getMinX(): int
     {
-        return (int) $this->minX;
+        return (int) floor($this->minX);
     }
 
     public function getMinY(): int
     {
-        return (int) $this->minY;
+        return (int) floor($this->minY);
     }
 
     public function getMinZ(): int
     {
-        return (int) $this->minZ;
+        return (int) floor($this->minZ);
     }
 
     public function getMaxX(): int
     {
-        return (int) $this->maxX;
+        return (int) floor($this->maxX);
     }
 
     public function getMaxY(): int
     {
-        return (int) $this->maxY;
+        return (int) floor($this->maxY);
     }
 
     public function getMaxZ(): int
     {
-        return (int) $this->maxZ;
+        return (int) floor($this->maxZ);
     }
 
     public function getWorld(): World

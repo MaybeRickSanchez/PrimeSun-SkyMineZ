@@ -291,6 +291,25 @@ final class Slapper
                     $player
                 );
 
+            // "console: give ..." runs as the console (so give/warp work for
+            // non-op clickers); anything else runs as the clicking player.
+            if (str_starts_with(strtolower(ltrim($command)), 'console:')) {
+                $consoleCmd = trim(substr($command, strpos($command, ':') + 1));
+
+                $this->location
+                    ->getWorld()
+                    ->getServer()
+                    ->dispatchCommand(
+                        new \pocketmine\console\ConsoleCommandSender(
+                            $this->location->getWorld()->getServer(),
+                            $this->location->getWorld()->getServer()->getLanguage()
+                        ),
+                        ltrim($consoleCmd, '/')
+                    );
+
+                continue;
+            }
+
             $this->location
                 ->getWorld()
                 ->getServer()

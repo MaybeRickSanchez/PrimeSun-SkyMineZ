@@ -29,14 +29,6 @@ final class EconomyListener implements Listener
         ];
     }
 
-    /**
-     * @return list<BaseEconomy>
-     */
-    public function getEconomies(): array
-    {
-        return $this->economies;
-    }
-
     public function onJoin(PlayerJoinEvent $event): void
     {
         $name = $event->getPlayer()->getName();

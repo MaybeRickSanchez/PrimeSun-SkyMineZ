@@ -21,13 +21,33 @@ final class ServerAddress
      */
     private static ?string $cached = null;
 
+    private static string $cachedFor = '';
+
     private function __construct()
     {
+    }
+
+    public static function invalidate(): void
+    {
+        self::$cached = null;
+        self::$cachedFor = '';
     }
 
     public static function of(
         Main $main
     ): string {
+        /*
+         * An explicit address wins over auto-detection: servers behind a proxy
+         * or with a memorable hostname show that instead of a raw IP.
+         */
+        $override = trim(
+            $main->getConfigManager()->getString('server.address-override')
+        );
+
+        if ($override !== '') {
+            return $override;
+        }
+
         return self::fromServer(
             $main->getServer()
         );
@@ -40,7 +60,9 @@ final class ServerAddress
     public static function fromServer(
         Server $server
     ): string {
-        if (self::$cached === null) {
+        $key = $server->getIp() . ':' . $server->getPort();
+
+        if (self::$cached === null || self::$cachedFor !== $key) {
             $ip = $server->getIp();
             $port = $server->getPort();
 
@@ -50,6 +72,7 @@ final class ServerAddress
             )
                 ? $ip
                 : $ip . ':' . $port;
+            self::$cachedFor = $key;
         }
 
         return self::$cached;

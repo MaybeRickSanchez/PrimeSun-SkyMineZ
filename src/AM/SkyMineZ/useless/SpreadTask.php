@@ -178,35 +178,9 @@ final class SpreadTask extends Task
         }
     }
 
-    public function isFinished(): bool
-    {
-        return $this->finished;
-    }
-
     public function getTotal(): int
     {
         return count($this->entries);
-    }
-
-    public function getProcessed(): int
-    {
-        return $this->processed;
-    }
-
-    public function getRemaining(): int
-    {
-        return max(
-            0,
-            $this->getTotal() - $this->processed
-        );
-    }
-
-    /**
-     * @return list<mixed>
-     */
-    public function getEntries(): array
-    {
-        return $this->entries;
     }
 
     private static function toClosure(callable $callable): Closure

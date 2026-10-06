@@ -58,11 +58,6 @@ class ModalForm extends Form
         }
     }
 
-    public function getContent(): string
-    {
-        return $this->content;
-    }
-
     public function setContent(
         string $content
     ): static {
@@ -79,22 +74,12 @@ class ModalForm extends Form
         return $this;
     }
 
-    public function getButton1(): string
-    {
-        return $this->button1;
-    }
-
     public function setButton2(
         string $text
     ): static {
         $this->button2 = $text;
 
         return $this;
-    }
-
-    public function getButton2(): string
-    {
-        return $this->button2;
     }
 
     /**
