@@ -50,7 +50,7 @@
 
 # SkyMineZ
 
-A SkyMine plugin for PocketMine-MP (Empty-NG fork) that treats **tick time as a
+A SkyMine plugin for PocketMine-MP 5 (NetherGames fork) that treats **tick time as a
 budget**: mine refills are spread across ticks, player scans are batched, and
 lookups that run on every interaction are O(1) indexes instead of linear scans.
 
@@ -138,7 +138,7 @@ fixes; check the commit history before updating a production server.
 
 ## Installation
 
-1. Requires **PocketMine-MP 5.44** (Empty-NG build) and **PHP 8.1+** with the
+1. Requires **PocketMine-MP 5 — NetherGames fork** (API 5.44) and **PHP 8.1+** with the
    `yaml` extension.
 2. Copy this folder to `plugins/SkyMineZ/` (folder plugin — no `.phar` build
    needed) and start the server.
