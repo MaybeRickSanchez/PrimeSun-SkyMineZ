@@ -35,6 +35,15 @@ final class MineManager
     /** @var array<string, Mine> */
     private array $mines = [];
 
+    /**
+     * World folder name => mines in that world. getMineAt() runs on every
+     * block break/place, so scanning only the mines in the player's world
+     * (usually a handful) beats scanning every mine on the server.
+     *
+     * @var array<string, array<string, Mine>>
+     */
+    private array $byWorld = [];
+
     private Config $db;
 
     /** @var TaskHandler<MineTask>|null */
@@ -54,6 +63,7 @@ final class MineManager
         $this->despawnAll();
 
         $this->mines = [];
+        $this->byWorld = [];
 
         $worldManager = $this->main->getServer()
             ->getWorldManager();
@@ -84,6 +94,7 @@ final class MineManager
             }
 
             $this->mines[$name] = $mine;
+            $this->byWorld[$mine->getWorld()->getFolderName()][$name] = $mine;
 
             $mine->spawn();
         }
@@ -157,6 +168,7 @@ final class MineManager
         );
 
         $this->mines[$name] = $mine;
+        $this->byWorld[$mine->getWorld()->getFolderName()][$name] = $mine;
 
         $mine->spawn();
 
@@ -178,6 +190,13 @@ final class MineManager
         $mine->deSpawn();
 
         unset($this->mines[$name]);
+
+        $worldName = $mine->getWorld()->getFolderName();
+        unset($this->byWorld[$worldName][$name]);
+
+        if (($this->byWorld[$worldName] ?? []) === []) {
+            unset($this->byWorld[$worldName]);
+        }
 
         $this->db->remove($name);
         $this->db->save();
@@ -280,14 +299,8 @@ final class MineManager
         Vector3 $position
     ): ?Mine {
         foreach (
-            $this->mines as $mine
+            $this->byWorld[$world->getFolderName()] ?? [] as $mine
         ) {
-            if (
-                $mine->getWorld() !== $world
-            ) {
-                continue;
-            }
-
             if ($mine->isIn($position)) {
                 return $mine;
             }
@@ -351,6 +364,35 @@ final class MineManager
             }
 
             $mine->reset('scheduled');
+        }
+    }
+
+    /**
+     * Single-pass 1s tick: due refills + hologram refresh in one loop instead
+     * of two. Used by {@link MineTask}; onTick()/tickHolograms() are kept for
+     * backwards compatibility.
+     */
+    public function tick(): void
+    {
+        $now = time();
+
+        foreach ($this->mines as $mine) {
+            if (
+                $mine->getResetInterval() > 0
+                && !$mine->isFilling()
+            ) {
+                $dueAt = $mine->getInfo()->getNextResetAt();
+
+                if ($dueAt <= 0) {
+                    $mine->getInfo()->setNextResetAt(
+                        $mine->nextResetTimestamp()
+                    );
+                } elseif ($dueAt <= $now) {
+                    $mine->reset('scheduled');
+                }
+            }
+
+            $mine->updateHologram();
         }
     }
 

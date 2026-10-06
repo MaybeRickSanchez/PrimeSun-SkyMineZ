@@ -81,6 +81,9 @@ final class TargetResolver
      * Empty would hit air immediately and return the air in front of the
      * player, breaking /crate create, /lb create and pos selection.
      *
+     * Note: there is no generic BlockTypeIds::LEAVES — every leaf variant has
+     * its own id, so all of them are listed explicitly.
+     *
      * @var array<int, true>
      */
     private const TRANSPARENT = [
@@ -89,7 +92,17 @@ final class TargetResolver
         BlockTypeIds::LAVA => true,
         BlockTypeIds::GLASS => true,
         BlockTypeIds::GLASS_PANE => true,
-        BlockTypeIds::LEAVES => true,
+        BlockTypeIds::ACACIA_LEAVES => true,
+        BlockTypeIds::BIRCH_LEAVES => true,
+        BlockTypeIds::DARK_OAK_LEAVES => true,
+        BlockTypeIds::JUNGLE_LEAVES => true,
+        BlockTypeIds::OAK_LEAVES => true,
+        BlockTypeIds::SPRUCE_LEAVES => true,
+        BlockTypeIds::MANGROVE_LEAVES => true,
+        BlockTypeIds::AZALEA_LEAVES => true,
+        BlockTypeIds::FLOWERING_AZALEA_LEAVES => true,
+        BlockTypeIds::CHERRY_LEAVES => true,
+        BlockTypeIds::PALE_OAK_LEAVES => true,
         BlockTypeIds::TALL_GRASS => true,
         BlockTypeIds::SNOW_LAYER => true,
     ];

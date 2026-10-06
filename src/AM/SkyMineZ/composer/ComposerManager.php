@@ -7,8 +7,8 @@ namespace AM\SkyMineZ\composer;
 use AM\SkyMineZ\Main;
 use AM\SkyMineZ\config\Messages;
 use AM\SkyMineZ\useless\Items;
+use AM\SkyMineZ\useless\VirtualInventory;
 use pocketmine\inventory\Inventory;
-use pocketmine\inventory\SimpleInventory;
 use pocketmine\item\Item;
 use pocketmine\math\Vector3;
 use pocketmine\player\Player;
@@ -37,7 +37,7 @@ final class ComposerManager
      */
     private array $sessions = [];
 
-    /** @var array<int, SimpleInventory> */
+    /** @var array<int, VirtualInventory> */
     private array $inventories = [];
 
     public function __construct(
@@ -344,7 +344,7 @@ final class ComposerManager
 
         $this->settlePlayer($player);
 
-        $inventory = new SimpleInventory(27);
+        $inventory = new VirtualInventory($player->getPosition(), 27);
 
         $id = spl_object_id($inventory);
 

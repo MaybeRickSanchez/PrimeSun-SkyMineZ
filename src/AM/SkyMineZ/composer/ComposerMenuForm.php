@@ -6,7 +6,8 @@ namespace AM\SkyMineZ\composer;
 
 use AM\SkyMineZ\Main;
 use AM\SkyMineZ\config\Messages;
-use AM\SkyMineZ\ui\Ui;use pocketmine\player\Player;
+use AM\SkyMineZ\ui\Ui;
+use pocketmine\player\Player;
 
 /**
  * The recipe picker. Each recipe shows its inputs and result up front, so
@@ -37,12 +38,6 @@ final class ComposerMenuForm
         $handlers = [];
 
         foreach ($recipes as $id => $recipe) {
-            $needs = [];
-
-            foreach ($recipe['inputs'] as $input) {
-                $needs[] = $input['count'] . 'x ' . $input['item']->getName();
-            }
-
             $handlers['§e' . $recipe['name']] = function(Player $who) use ($id): void {
                 if (!$this->plugin->getComposerManager()->open($who, $id)) {
                     Ui::error(

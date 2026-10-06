@@ -8,8 +8,8 @@ use AM\SkyMineZ\Main;
 use AM\SkyMineZ\config\Messages;
 use AM\SkyMineZ\useless\Items;
 use AM\SkyMineZ\useless\Positions;
+use AM\SkyMineZ\useless\VirtualInventory;
 use pocketmine\inventory\Inventory;
-use pocketmine\inventory\SimpleInventory;
 use pocketmine\block\VanillaBlocks;
 use pocketmine\item\Item;
 use pocketmine\math\Vector3;
@@ -44,7 +44,7 @@ final class TradeManager
      * @var array<int, array{
      *     a: string,
      *     b: string,
-     *     inventory: SimpleInventory,
+     *     inventory: VirtualInventory,
      *     confirmedA: bool,
      *     confirmedB: bool,
      *     expires: int,
@@ -75,7 +75,7 @@ final class TradeManager
 
     public function getInventory(
         int $id
-    ): ?SimpleInventory {
+    ): ?VirtualInventory {
         return $this->sessions[$id]['inventory'] ?? null;
     }
 
@@ -364,7 +364,7 @@ final class TradeManager
         Player $a,
         Player $b
     ): bool {
-        $inventory = new SimpleInventory(self::SIZE);
+        $inventory = new VirtualInventory($a->getPosition(), self::SIZE);
 
         $divider = VanillaBlocks::STAINED_GLASS_PANE()->asItem();
         $divider->setCustomName(' ');

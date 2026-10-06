@@ -28,7 +28,6 @@ final class MineTask extends Task
 
     public function onRun(): void
     {
-        $this->manager->onTick();
-        $this->manager->tickHolograms();
+        $this->manager->tick();
     }
 }

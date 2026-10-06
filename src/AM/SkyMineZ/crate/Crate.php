@@ -11,6 +11,7 @@ use AM\SkyMineZ\useless\NumberFormatter;
 use AM\SkyMineZ\event\CrateOpenEvent;
 use AM\SkyMineZ\useless\ReadOnlyInventory;
 use AM\SkyMineZ\useless\TextParticle;
+use AM\SkyMineZ\useless\VirtualInventory;
 use InvalidArgumentException;
 use pocketmine\block\DyedShulkerBox;
 use pocketmine\block\tile\ShulkerBox as ShulkerTile;
@@ -20,7 +21,6 @@ use pocketmine\color\Color;
 use pocketmine\entity\Location;
 use pocketmine\entity\object\ItemEntity;
 use pocketmine\inventory\Inventory;
-use pocketmine\inventory\SimpleInventory;
 use pocketmine\item\Item;
 use pocketmine\player\Player;
 use pocketmine\scheduler\ClosureTask;
@@ -443,7 +443,7 @@ final class Crate
             return false;
         }
 
-        $inventory = new SimpleInventory(27);
+        $inventory = new VirtualInventory($player->getPosition(), 27);
 
         $this->fillPreview($inventory);
 
@@ -602,7 +602,7 @@ final class Crate
          * never exposed, so hoppers cannot steal the spinning items and two
          * openings can never share state.
          */
-        $inventory = new SimpleInventory(27);
+        $inventory = new VirtualInventory($player->getPosition(), 27);
 
         $this->animationInventory = $inventory;
 
@@ -638,13 +638,25 @@ final class Crate
      */
     private function rollReward(): ?Reward
     {
-        if ($this->rewards === []) {
-            return null;
-        }
-
         $totalWeight = $this->getTotalWeight();
 
         if ($totalWeight <= 0) {
+            return null;
+        }
+
+        return $this->rollRewardWithTotal($totalWeight);
+    }
+
+    /**
+     * Same roll against a precomputed total. The animation calls this ~150
+     * times per opening (up to 7 display rolls x ~36 frames); recomputing the
+     * O(R) total every time is pure waste since rewards cannot change
+     * mid-spin (busy flag). The winner roll still uses rollReward() so admin
+     * edits between openings are always honored.
+     */
+    private function rollRewardWithTotal(float $totalWeight): ?Reward
+    {
+        if ($this->rewards === [] || $totalWeight <= 0) {
             return null;
         }
 
@@ -670,9 +682,11 @@ final class Crate
     /**
      * A throwaway item used as a decoration while the crate spins.
      */
-    private function getRandomDisplayItem(): ?Item
+    private function getRandomDisplayItem(?float $totalWeight = null): ?Item
     {
-        $reward = $this->rollReward();
+        $reward = $totalWeight === null
+            ? $this->rollReward()
+            : $this->rollRewardWithTotal($totalWeight);
 
         return $reward?->getItem();
     }
@@ -707,6 +721,10 @@ final class Crate
         // the delay ranges on every one of the ~36 frames is pure waste.
         $delays = $this->snapshotAnimationDelays();
 
+        // Snapshot the reward total once for the whole spin (see
+        // rollRewardWithTotal): ~150 O(R) scans per opening become 1.
+        $displayTotal = $this->getTotalWeight();
+
         $runStep = function (
             int $step
         ) use (
@@ -715,7 +733,8 @@ final class Crate
             $winner,
             $inventory,
             $steps,
-            $delays
+            $delays,
+            $displayTotal
         ): void {
             if (!$player->isConnected()) {
                 $this->destroyFloatingItem();
@@ -773,7 +792,7 @@ final class Crate
             }
 
             $display =
-                $this->getRandomDisplayItem();
+                $this->getRandomDisplayItem($displayTotal);
 
             if ($display === null) {
                 $this->finishOpening(
@@ -805,7 +824,7 @@ final class Crate
 
                 if (mt_rand(0, 100) <= 45) {
                     $random =
-                        $this->getRandomDisplayItem();
+                        $this->getRandomDisplayItem($displayTotal);
 
                     if ($random !== null) {
                         $inventory->setItem(
