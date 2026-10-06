@@ -69,19 +69,30 @@ fixes; check the commit history before updating a production server.
 
 | System | What it does |
 | --- | --- |
-| `mine/` | Cuboid mines with weighted block lists, hologram countdowns, automatic timed refills via a per-tick block budget (`MineFillTask`), grief protection, full JSON persistence |
-| `crate/` | Animated chest crates with weighted rewards, NBT key items, read-only previews, explosion/pairing protection, O(1) position index |
-| `outpost/` | Capturable zones with progress, cooldowns, owner gold payouts, holograms, JSON persistence |
-| `slapper/` | Clickable NPCs (custom skin, messages, console/player commands) plus clickable blocks bound to them |
-| `leaderboard/` | Floating top-10 holograms for money, gold, mined, deaths and kills; hash-guarded re-renders (no flicker) |
+| `mine/` | Cuboid mines with weighted block lists, hologram countdowns, automatic timed refills via a per-tick block budget (`MineFillTask`), placement grief protection, drops-to-inventory rewards, full JSON persistence |
+| `crate/` | Animated shulker crates with configurable color, weighted rewards, NBT key items (consumed exactly once), read-only previews and spin windows, explosion protection, O(1) position index |
+| `outpost/` | Capturable zones with progress, cooldowns, owner gold payouts, holograms with settable label positions, JSON persistence |
+| `slapper/` | Clickable NPCs (your skin, messages, player/`console:` commands) plus clickable blocks bound to them; look-at-players on a 5s interval |
+| `leaderboard/` | Floating top-10 holograms for money, gold, mined, deaths, kills and team level/wins; hash-guarded re-renders (no flicker) |
+| `team/` | Teams with invites, kicks, disband, levels/XP, explicit-accept duels with arena rendezvous teleport and safe return, JSON persistence |
+| `warp/` | Named server warps with create/move/delete, per-player teleport, missing-world-safe, JSON persistence |
+| `label/` | General multi-line floating labels (wiki/help/tutorials), full CRUD, JSON persistence |
+| `lobby/` | Hub + mid-lobby positions, join teleport modes, reusable cuboid protection, fall/void/hunger guards — all configurable |
+| `shop/` | Category shop with buy/sell/sell-all through the economy managers, confirmations |
+| `quest/` | Daily quests (mine/kill/earn) with progress bars, claim-once rewards, lazy daily reset, JSON persistence |
+| `composer/` | Material processor: virtual workbench, multiset recipe matching, plus an in-game admin UI to create/rename/edit/delete recipes (persisted to `composer.recipes`) |
+| `tools/` | Unbreakable, undroppable progression gear with block-break XP, level-gated enchant upgrades, material costs, upgrade UI |
+| `trade/` | Chest-style two-player trades: private sides, double-confirm, change invalidates confirmations, safe cancel/timeout/death/disconnect handling |
 | `scorehud/` | Sidebar with spawn welcome screen and stats screen, hysteresis switching, delta-only packet updates, per-player toggle |
 | `economy/` | Dual JSON currency (`money`, `gold`) with vetoable change events |
-| `miner/` | Per-player mined/deaths/kills/streak stats |
-| `pvp/` | Per-player PvP preference with projectile attribution |
-| `lagmaker/` | Item-entity stacking, per-player drop caps, TTL/all/off cleanup passes — every pass tick-spread |
-| `form/` | Bundled FormAPI port (Simple/Custom/Modal) compatible with PM 5.44 |
+| `miner/` | Per-player mined (mines only)/deaths/kills/streak stats |
+| `pvp/` | Per-player PvP preference with projectile attribution, duel override |
+| `lagmaker/` | Item-entity stacking, per-player drop caps, TTL/all/off cleanup passes with 30/5/2/1s warnings — every pass tick-spread |
+| `wand/` | Position Wand: left-click sets pos1, sneak-click sets pos2, never breaks blocks; shared `SelectionManager` for all cuboid systems |
+| `form/` | Bundled FormAPI port (Simple/Custom/Modal) compatible with PM 5.44, plus the shared `Ui` toolkit (menu/confirm/input) every window is built from |
+| `config/` | Typed `config.yml` access plus the `messages.*` catalog: every player-facing chat string is configurable with built-in fallbacks |
 | `event/` | Public cancellable events for other plugins |
-| `useless/` | `SpreadTask` (tick-spread iteration), hologram particles, `NumberFormatter`, read-only inventories |
+| `useless/` | `SpreadTask` (tick-spread iteration), hologram particles, `NumberFormatter`, read-only inventories, canonical `Positions`/`Items`/`Worlds` helpers |
 
 ---
 
@@ -114,9 +125,14 @@ fixes; check the commit history before updating a production server.
 - **O(1) indexes** — crates and slapper blocks are resolved by a
   `world:x:y:z` hash, not by scanning every crate on every click.
 - **Normalized collision boxes** — `min`/`max` are precomputed once, so the
-  per-tick `isIn()` check is six float comparisons.
+  per-tick `isIn()` check is six float comparisons (world-aware variant
+  included, no extra cost when worlds already match).
 - **Delta-only sidebar** — unchanged scoreboard lines cost one string compare
   and zero packets.
+- **Single-timer clear warnings** — the 30/5/2/1s item-clear countdowns ride on
+  the same counter that triggers the clear; no extra tasks are scheduled.
+- **Snapshotted tuning** — per-tick config reads are cached once per tick
+  (LagMaker) or once per opening (crate animation pacing).
 
 ---
 
@@ -137,29 +153,45 @@ Player commands (`skyminez.use`, granted to everyone):
 
 | Command | Effect |
 | --- | --- |
-| `/skymine menu` | Main menu form (PvP toggle, sidebar toggle, stats, admin shortcuts) |
+| `/skymine menu` | Main menu form (PvP/sidebar toggles, stats, warps, shop, quests, teams, composer, gear, hub, admin shortcuts) |
 | `/skymine pvp [on\|off]` | Toggle your PvP preference |
 | `/skymine hud` | Toggle your sidebar |
 | `/skymine stats [player]` | Mining stats, works for offline names too |
 | `/skymine pos1` / `/skymine pos2` | Mark cuboid corners for `/mine create` and `/outpost create` |
+| `/hub` / `/lobby` | Teleport to the configured hub (falls back to mid-lobby) |
+| `/warp [name]` | Teleport to a server warp (lists them with no argument) |
+| `/team <menu\|create\|info\|list\|invite\|accept\|deny\|leave>` | Teams, invitations and info |
+| `/team duel challenge <team>` / `accept <id>` / `deny <id>` | Challenge and fight other teams (owners only) |
+| `/quest` | Daily quests with progress bars and claim buttons |
+| `/shop` | Category shop (buy/sell/sell-all with confirmations) |
+| `/trade <player\|accept\|deny\|cancel>` | Chest-style player trading |
+| `/composer` | Material composer (pick a recipe, fill the workbench, close to craft) |
+| `/tools` | Progression gear: attune the held item, spend XP/materials on upgrades |
 
 Admin commands (`skyminez.admin`, op by default):
 
 | Command | Effect |
 | --- | --- |
 | `/skymine money\|gold <give\|take\|set\|check> <player> [amount]` | Manage balances |
+| `/skymine wand` | Get the Position Wand (admin) |
 | `/skymine lagmaker <status\|toggle\|cleanup <off\|ttl\|all>>` | Lag protection controls |
 | `/skymine reload` / `/skymine save` | Reload config+data / flush every store |
-| `/crate create\|remove\|move\|list\|givekey\|open\|save` | Crates and keys |
+| `/crate create\|remove\|move\|list\|givekey\|open\|color\|menu\|save` | Crates, keys and shulker color |
 | `/crate reward <add\|remove\|list\|weight\|type>` | Reward entries with live chance display |
-| `/mine create\|remove\|list\|info\|reset\|setinterval\|setlabel\|clearblocks` | Mines |
+| `/mine create\|remove\|list\|info\|reset\|setinterval\|setlabel\|clearblocks\|menu` | Mines |
 | `/mine block <add\|remove\|list>` | Weighted block list (`/mine block add <mine> stone 60`) |
 | `/mine pos1\|pos2` | Same markers, mine-flavoured aliases |
-| `/outpost create\|remove\|list\|info\|owner\|reset` | Outposts (`owner <name> <player\|clear>`) |
-| `/slapper create\|remove\|list\|move` | NPCs with your skin |
-| `/slapper msg\|cmd <add\|remove\|clear\|list>` | Messages and commands (`{player}` placeholder) |
+| `/outpost create\|remove\|list\|info\|owner\|reset\|setlabel\|menu` | Outposts (`owner <name> <player\|clear>`) |
+| `/slapper create\|remove\|list\|move\|menu` | NPCs with your skin |
+| `/slapper msg\|cmd <add\|remove\|clear\|list>` | Messages and commands (`{player}` placeholder, `console:` prefix runs as console) |
 | `/slapper block <add\|remove\|list>` | Clickable blocks bound to a slapper |
-| `/lb create\|remove\|list\|info\|title\|setpos\|refresh` | Leaderboards (`/lb create top money Top Money`) |
+| `/lb create\|remove\|list\|info\|title\|setpos\|refresh\|menu` | Leaderboards (`/lb create top money Top Money`) |
+| `/hub set\|setmid\|unset\|unsetmid\|protect\|unprotect\|info` | Lobby positions and protection |
+| `/warp create\|delete\|move\|list` | Warp management |
+| `/label create\|set\|addline\|delline\|move\|remove\|list\|info` | Floating text labels |
+| `/team kick\|disband` | Owner controls (plus everything in the player table) |
+| `/team arena <seta\|setb\|clear\|info>` | Duel rendezvous points; fighters teleport on accept, return afterwards |
+| `/composer manage` | Create/rename/edit/delete composer recipes in game |
 
 Typical first setup, in game:
 
@@ -175,6 +207,10 @@ Typical first setup, in game:
 /outpost create mid
 /lb create top money Top Balance
 /slapper create guide
+/hub set
+/warp create spawn
+/team arena seta
+/team arena setb
 ```
 
 ---
@@ -182,26 +218,38 @@ Typical first setup, in game:
 ## Configuration
 
 All tuning lives in `config.yml`: sidebar texts and timings, PvP defaults,
-economy starting balances, crate animation pacing, mine refill budget and
-default interval, outpost capture/cooldown/gold values, and the lag-cleaner
-mode (`off` / `ttl` / `all`), TTL, interval and per-tick budget.
+economy starting balances, crate animation pacing and key behavior, mine
+refill budget and default interval, outpost capture/cooldown/gold values,
+lobby positions/protection/anti-damage, team/duel timings and arena spawns
+(`teams.arena-a/b`, set in game with `/team arena seta|setb`), daily quests,
+shop catalog, tool upgrade packages, composer recipes, trade timeouts, and the
+lag-cleaner mode (`off` / `ttl` / `all`), TTL, interval and per-tick budget.
+
+Every player-facing chat string lives under `messages:` (498 keys, `{braces}`
+placeholders) — reword or translate without touching code. A missing or empty
+entry falls back to the built-in default, so old configs keep working; the
+legacy `pvp.disabled-message` key still wins when set.
 
 Data files (`plugin_data/SkyMineZ/*.json`) are plain JSON and safe to inspect;
-`mines.json`, `outposts.json`, `crates.json`, `slappers.json` and
-`leaderboards.json` survive restarts including owners, timers and block lists.
+`mines.json`, `crates.json`, `outposts.json`, `slappers.json`,
+`leaderboards.json`, `teams.json`, `warps.json`, `labels.json`, `quests.json`,
+`lobby.json`, `pvp.json`, `miner.json`, `money_economy.json` and
+`gold_economy.json` survive restarts including owners, timers and block lists.
 
 ---
 
 ## For developers
 
-- **Bundled forms** — `AM\SkyMineZ\form\FormAPI::simple($cb)->setTitle(...)->addButton(...)
-  ->sendToPlayer($player)`. Same API as jojoe77777/FormAPI, plus the
+- **Bundled forms** — every window is built from the shared `Ui` toolkit
+  (`Ui::menu()` / `Ui::confirm()` / `Ui::input()`), which sits on the bundled
+  FormAPI port (`SimpleForm`/`CustomForm`/`ModalForm`) plus the
   `onCompletion` / retry / blocking members PM 5.44 requires.
 - **Events** — `CrateOpenEvent`, `MineResetEvent`, `OutpostCaptureEvent`,
   `SlapperInteractEvent`, `MinerBlockMinedEvent`, `EconomyChangeEvent`,
-  `ScoreHudUpdateEvent`, `PlayerPvPChangeEvent`. All raised through
-  `EventDispatcher::dispatch()`, which skips allocation entirely when nobody
-  listens.
+  `ScoreHudUpdateEvent`, `PlayerPvPChangeEvent`. Handlers are guarded by
+  `::hasHandlers()` so events nobody listens to skip allocation entirely
+  (`MinerBlockMinedEvent` additionally funnels through
+  `EventDispatcher::dispatch()`).
 - **Static analysis** — `composer stan` (PHPStan level 9, clean). The PocketMine
   sources are server-provided; point `scanDirectories` in `phpstan.neon.dist`
   at your server checkout.
