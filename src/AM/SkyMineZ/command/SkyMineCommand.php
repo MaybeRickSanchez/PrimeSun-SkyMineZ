@@ -304,10 +304,10 @@ final class SkyMineCommand extends BaseCommand
         array $args,
         BaseEconomy $economy
     ): bool {
-        if (!$this->testPermission($sender)) {
+        if (!$sender->hasPermission(Main::PERMISSION_ADMIN)) {
             $this->error(
                 $sender,
-                Messages::get($this->plugin, Messages::SKYMINE_ECONOMY_NO_PERM)
+                Messages::get($this->plugin, Messages::COMMON_NO_PERMISSION)
             );
 
             return true;
@@ -453,6 +453,15 @@ final class SkyMineCommand extends BaseCommand
             return true;
         }
 
+        if (!$sender->hasPermission(Main::PERMISSION_ADMIN)) {
+            $this->error(
+                $sender,
+                Messages::get($this->plugin, Messages::COMMON_NO_PERMISSION)
+            );
+
+            return true;
+        }
+
         $position = TargetResolver::lookedAtPosition(
             $sender
         ) ?? $sender->getPosition();
@@ -501,7 +510,12 @@ final class SkyMineCommand extends BaseCommand
             return true;
         }
 
-        if (!$this->testPermission($sender)) {
+        if (!$sender->hasPermission(Main::PERMISSION_ADMIN)) {
+            $this->error(
+                $sender,
+                Messages::get($this->plugin, Messages::COMMON_NO_PERMISSION)
+            );
+
             return true;
         }
 
@@ -533,6 +547,15 @@ final class SkyMineCommand extends BaseCommand
             return true;
         }
 
+        if (!$sender->hasPermission(Main::PERMISSION_ADMIN)) {
+            $this->error(
+                $sender,
+                Messages::get($this->plugin, Messages::COMMON_NO_PERMISSION)
+            );
+
+            return true;
+        }
+
         $this->plugin->getSelectionManager()->clear(
             $sender
         );
@@ -548,7 +571,12 @@ final class SkyMineCommand extends BaseCommand
     private function handleReload(
         CommandSender $sender
     ): bool {
-        if (!$this->testPermission($sender)) {
+        if (!$sender->hasPermission(Main::PERMISSION_ADMIN)) {
+            $this->error(
+                $sender,
+                Messages::get($this->plugin, Messages::COMMON_NO_PERMISSION)
+            );
+
             return true;
         }
 
@@ -578,7 +606,12 @@ final class SkyMineCommand extends BaseCommand
         CommandSender $sender,
         array $args
     ): bool {
-        if (!$this->testPermission($sender)) {
+        if (!$sender->hasPermission(Main::PERMISSION_ADMIN)) {
+            $this->error(
+                $sender,
+                Messages::get($this->plugin, Messages::COMMON_NO_PERMISSION)
+            );
+
             return true;
         }
 
@@ -671,7 +704,12 @@ final class SkyMineCommand extends BaseCommand
     private function handleSave(
         CommandSender $sender
     ): bool {
-        if (!$this->testPermission($sender)) {
+        if (!$sender->hasPermission(Main::PERMISSION_ADMIN)) {
+            $this->error(
+                $sender,
+                Messages::get($this->plugin, Messages::COMMON_NO_PERMISSION)
+            );
+
             return true;
         }
 

@@ -157,7 +157,6 @@ Player commands (`skyminez.use`, granted to everyone):
 | `/skymine pvp [on\|off]` | Toggle your PvP preference |
 | `/skymine hud` | Toggle your sidebar |
 | `/skymine stats [player]` | Mining stats, works for offline names too |
-| `/skymine pos1` / `/skymine pos2` | Mark cuboid corners for `/mine create` and `/outpost create` |
 | `/hub` / `/lobby` | Teleport to the configured hub (falls back to mid-lobby) |
 | `/warp [name]` | Teleport to a server warp (lists them with no argument) |
 | `/team <menu\|create\|info\|list\|invite\|accept\|deny\|leave>` | Teams, invitations and info |
@@ -173,6 +172,7 @@ Admin commands (`skyminez.admin`, op by default):
 | Command | Effect |
 | --- | --- |
 | `/skymine money\|gold <give\|take\|set\|check> <player> [amount]` | Manage balances |
+| `/skymine pos1` / `/skymine pos2` | Mark cuboid corners for `/mine create` and `/outpost create` |
 | `/skymine wand` | Get the Position Wand (admin) |
 | `/skymine lagmaker <status\|toggle\|cleanup <off\|ttl\|all>>` | Lag protection controls |
 | `/skymine reload` / `/skymine save` | Reload config+data / flush every store |
