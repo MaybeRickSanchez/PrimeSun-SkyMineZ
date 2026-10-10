@@ -127,7 +127,7 @@ final class OutpostAdminForm
                         return;
                     }
 
-                    $outpost->setLabelPosition($who->getPosition());
+                    $outpost->setLabelPosition(\AM\SkyMineZ\command\TargetResolver::playerMiddle($who));
                     $outpost->spawn();
                     $this->plugin->getOutpostManager()->save($name);
 

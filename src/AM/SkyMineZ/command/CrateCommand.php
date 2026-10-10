@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace AM\SkyMineZ\command;
 
 use AM\SkyMineZ\crate\Crate;
+use AM\SkyMineZ\crate\CrateAdminForm;
 use AM\SkyMineZ\crate\Key;
 use AM\SkyMineZ\crate\Reward;
 use AM\SkyMineZ\Main;
@@ -100,13 +101,11 @@ final class CrateCommand extends BaseCommand
                     return;
                 }
 
-                // Prefer the block being looked at, but fall back to the
-                // player's current position so the command works while
-                // looking at the sky. The Position Wand (pos1/pos2) is
-                // untouched and remains the way to pick cuboid corners.
-                $position = TargetResolver::lookedAtPosition(
-                    $player
-                ) ?? $player->getPosition();
+                // Canonical "here": the player's middle position, so the
+                // command works while looking at the sky. The Position Wand
+                // (pos1/pos2) is untouched and remains the way to pick
+                // cuboid corners.
+                $position = TargetResolver::playerMiddle($player);
 
                 $crate = $this->plugin->getCrateManager()->create(
                     $name,
@@ -222,11 +221,8 @@ final class CrateCommand extends BaseCommand
                     return;
                 }
 
-                // Same fallback as create: looked-at block first, player's
-                // current position otherwise. Wand selection is separate.
-                $position = TargetResolver::lookedAtPosition(
-                    $player
-                ) ?? $player->getPosition();
+                // Same canonical position as create. Wand selection is separate.
+                $position = TargetResolver::playerMiddle($player);
 
                 $color = $crate->getColor();
                 $keys = $crate->getKeys();

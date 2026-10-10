@@ -297,9 +297,7 @@ final class MineCommand extends BaseCommand
                     $args[0] ?? 'pos1'
                 );
 
-                $position = TargetResolver::lookedAtPosition(
-                    $player
-                ) ?? $player->getPosition();
+                $position = TargetResolver::playerMiddle($player);
 
                 if ($which === 'pos1') {
                     $this->plugin->getSelectionManager()->setPos1(
@@ -390,9 +388,7 @@ final class MineCommand extends BaseCommand
                     return;
                 }
 
-                $position = TargetResolver::lookedAtPosition(
-                    $player
-                ) ?? $player->getPosition();
+                $position = TargetResolver::playerMiddle($player);
 
                 $mine->getInfo()->setPosition($position);
                 $mine->getInfo()->spawn();

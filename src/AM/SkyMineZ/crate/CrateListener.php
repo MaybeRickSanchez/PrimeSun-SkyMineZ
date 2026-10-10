@@ -115,9 +115,12 @@ final class CrateListener implements Listener
             $item = $inventory->getItemInHand();
 
             if (Key::getId($item) === $keyId) {
-                $inventory->setItemInHand(
-                    $item->pop()
-                );
+                // pop() returns the removed single item and shrinks $item in
+                // place: the hand must receive the shrunken remainder, not
+                // the popped key (which would keep 1 key forever, or delete
+                // a whole stack down to 1).
+                $item->pop();
+                $inventory->setItemInHand($item);
             }
         }
     }

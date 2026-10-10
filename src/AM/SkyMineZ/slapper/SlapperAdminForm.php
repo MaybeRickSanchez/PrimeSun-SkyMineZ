@@ -158,7 +158,7 @@ final class SlapperAdminForm
                     );
                 },
                 '§eMove here' => function(Player $who) use ($name): void {
-                    if (!$this->plugin->getSlapperManager()->move($name, $who->getPosition())) {
+                    if (!$this->plugin->getSlapperManager()->move($name, \AM\SkyMineZ\command\TargetResolver::playerMiddle($who))) {
                         Ui::error($this->plugin, $who, Messages::get($this->plugin, Messages::SLAPPER_GONE));
 
                         return;

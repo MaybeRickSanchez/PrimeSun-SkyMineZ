@@ -9,7 +9,6 @@ use AM\SkyMineZ\config\Messages;
 use AM\SkyMineZ\outpost\OutpostAdminForm;
 use AM\SkyMineZ\outpost\Outpost;
 use AM\SkyMineZ\useless\NumberFormatter;
-use AM\SkyMineZ\useless\Positions;
 use pocketmine\command\CommandSender;
 use pocketmine\player\Player;
 
@@ -382,8 +381,7 @@ final class OutpostCommand extends BaseCommand
                     return;
                 }
 
-                $position = TargetResolver::lookedAtPosition($player)
-                    ?? Positions::above($player->getPosition(), 2.0);
+                $position = TargetResolver::playerMiddle($player);
 
                 $outpost->setLabelPosition($position);
                 $outpost->spawn();

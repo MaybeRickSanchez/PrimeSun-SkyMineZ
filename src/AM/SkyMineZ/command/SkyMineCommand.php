@@ -462,9 +462,7 @@ final class SkyMineCommand extends BaseCommand
             return true;
         }
 
-        $position = TargetResolver::lookedAtPosition(
-            $sender
-        ) ?? $sender->getPosition();
+        $position = TargetResolver::playerMiddle($sender);
 
         $selection = $this->plugin->getSelectionManager();
 

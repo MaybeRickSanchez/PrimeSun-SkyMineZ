@@ -85,8 +85,7 @@ final class LabelCommand extends BaseCommand
                 try {
                     $this->manager()->create(
                         $name,
-                        TargetResolver::lookedAtPosition($player)
-                    ?? Positions::above($player->getPosition(), 2.0),
+                        TargetResolver::playerMiddle($player),
                         $first === '' ? [''] : [$first]
                     );
                 } catch (\Throwable $exception) {
@@ -211,8 +210,7 @@ final class LabelCommand extends BaseCommand
                     return;
                 }
 
-                $position = TargetResolver::lookedAtPosition($player)
-                    ?? Positions::above($player->getPosition(), 2.0);
+                $position = TargetResolver::playerMiddle($player);
 
                 $this->manager()->move($name, $position);
 

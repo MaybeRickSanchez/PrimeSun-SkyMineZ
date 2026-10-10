@@ -116,7 +116,7 @@ final class MineAdminForm
                         return;
                     }
 
-                    $mine->getInfo()->setPosition($who->getPosition());
+                    $mine->getInfo()->setPosition(\AM\SkyMineZ\command\TargetResolver::playerMiddle($who));
                     $mine->getInfo()->spawn();
                     $this->plugin->getMineManager()->save($name);
 

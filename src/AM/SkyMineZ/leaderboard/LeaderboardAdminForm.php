@@ -86,7 +86,7 @@ final class LeaderboardAdminForm
                             $this->plugin->getLeaderboardManager()->add(
                                 $name,
                                 $type,
-                                TargetResolver::lookedAtPosition($w) ?? $w->getPosition()
+                                TargetResolver::playerMiddle($w)
                             );
                         } catch (\Throwable $exception) {
                             Ui::error($this->plugin, $w, $exception->getMessage());
@@ -155,7 +155,7 @@ final class LeaderboardAdminForm
                     }
 
                     $board->setPosition(
-                        TargetResolver::lookedAtPosition($who) ?? $who->getPosition()
+                        TargetResolver::playerMiddle($who)
                     );
 
                     $this->plugin->getLeaderboardManager()->refreshAll();

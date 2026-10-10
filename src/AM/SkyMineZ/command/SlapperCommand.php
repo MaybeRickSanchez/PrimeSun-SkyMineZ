@@ -88,7 +88,7 @@ final class SlapperCommand extends BaseCommand
                 try {
                     $this->plugin->getSlapperManager()->addSlapper(
                         $name,
-                        $player->getPosition(),
+                        TargetResolver::playerMiddle($player),
                         $player
                     );
                 } catch (\Throwable $exception) {
@@ -229,7 +229,7 @@ final class SlapperCommand extends BaseCommand
                 if (
                     !$this->plugin->getSlapperManager()->move(
                         $name,
-                        $player->getPosition()
+                        TargetResolver::playerMiddle($player)
                     )
                 ) {
                     $this->error(

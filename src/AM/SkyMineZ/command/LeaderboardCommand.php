@@ -100,9 +100,7 @@ final class LeaderboardCommand extends BaseCommand
                     return;
                 }
 
-                $position = TargetResolver::lookedAtPosition(
-                    $player
-                ) ?? $player->getPosition();
+                $position = TargetResolver::playerMiddle($player);
 
                 $title = $this->joinArguments(
                     $args,
@@ -306,9 +304,7 @@ final class LeaderboardCommand extends BaseCommand
                     return;
                 }
 
-                $position = TargetResolver::lookedAtPosition(
-                    $player
-                ) ?? $player->getPosition();
+                $position = TargetResolver::playerMiddle($player);
 
                 $leaderboard->setPosition($position);
 

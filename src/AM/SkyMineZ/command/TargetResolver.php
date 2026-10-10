@@ -10,14 +10,17 @@ use pocketmine\player\Player;
 use pocketmine\world\Position;
 
 /**
- * Resolves the block a command should act on.
+ * Resolves the block/position a command should act on.
  *
- * Two sources are supported and both are used throughout the plugin:
+ * The canonical source is the player's middle (eye) position: every
+ * create/move/spawn command uses it, so commands work the same whether the
+ * player looks at the sky, the ground, or a wall. Cuboid corners keep coming
+ * from the pos1/pos2 selection (chat commands or the Position Wand), which is
+ * untouched.
  *
- *  - the block the player is looking at, for one-block commands such as
- *    `/crate create` or `/lb create`
- *  - the pos1/pos2 selection, for the cuboid commands (`/mine create`,
- *    `/outpost create`) where looking at two corners is not practical
+ * The looked-at helpers below are retained for API compatibility (external
+ * plugins may call them) but nothing inside this plugin resolves positions
+ * through the line of sight anymore.
  */
 final class TargetResolver
 {
@@ -29,8 +32,27 @@ final class TargetResolver
     }
 
     /**
+     * The player's middle position (eye height): the single canonical "here"
+     * for every create/move/spawn command in the plugin.
+     */
+    public static function playerMiddle(
+        Player $player
+    ): Position {
+        $eye = $player->getEyePos();
+
+        return new Position(
+            $eye->x,
+            $eye->y,
+            $eye->z,
+            $player->getWorld()
+        );
+    }
+
+    /**
      * The block the player is looking at, or null when they are looking at
      * nothing within reach.
+     *
+     * Kept for API compatibility; internal commands use playerMiddle().
      */
     public static function lookedAtBlock(
         Player $player

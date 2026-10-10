@@ -75,6 +75,16 @@ final class ScoreHud implements Listener
     private array $lines = [];
 
     /**
+     * The title currently on each player's screen, keyed like $lines. Titles
+     * must be tracked too: switching between the welcome and stats layouts
+     * changes the title, and sending new lines under the old title mixes the
+     * two boards with each other.
+     *
+     * @var array<string, string>
+     */
+    private array $titles = [];
+
+    /**
      * Players who switched the sidebar off with /hud.
      *
      * @var array<string, true>
@@ -182,7 +192,8 @@ final class ScoreHud implements Listener
         unset(
             $this->spawnEnteredAt[$name],
             $this->leftSpawnAt[$name],
-            $this->lines[$name]
+            $this->lines[$name],
+            $this->titles[$name]
         );
 
         if ($this->isAtServerSpawn($player)) {
@@ -219,6 +230,7 @@ final class ScoreHud implements Listener
             $this->spawnEnteredAt[$name],
             $this->leftSpawnAt[$name],
             $this->lines[$name],
+            $this->titles[$name],
             $this->disabled[$name]
         );
     }
@@ -238,7 +250,8 @@ final class ScoreHud implements Listener
                 $this->disabled[$name],
                 $this->modes[$name],
                 $this->spawnEnteredAt[$name],
-                $this->leftSpawnAt[$name]
+                $this->leftSpawnAt[$name],
+                $this->titles[$name]
             );
 
             $this->initializePlayer($player);
@@ -253,7 +266,8 @@ final class ScoreHud implements Listener
         unset(
             $this->modes[$name],
             $this->spawnEnteredAt[$name],
-            $this->leftSpawnAt[$name]
+            $this->leftSpawnAt[$name],
+            $this->titles[$name]
         );
 
         return false;
@@ -353,6 +367,10 @@ final class ScoreHud implements Listener
 
     /**
      * Sends the board if it differs from what the player already sees.
+     *
+     * A title change (welcome <-> stats layout) recreates the whole board:
+     * line packets cannot change the title, so sending new lines under the
+     * old title would mix the two layouts with each other.
      */
     private function render(
         Player $player,
@@ -380,8 +398,9 @@ final class ScoreHud implements Listener
         }
 
         $oldLines = $this->lines[$name] ?? null;
+        $oldTitle = $this->titles[$name] ?? null;
 
-        if ($oldLines === null) {
+        if ($oldLines === null || $oldTitle !== $title) {
             $this->createScoreboard(
                 $player,
                 $title,
@@ -433,6 +452,7 @@ final class ScoreHud implements Listener
         );
 
         $this->lines[$this->key($player)] = $lines;
+        $this->titles[$this->key($player)] = $title;
     }
 
     /**
@@ -548,7 +568,8 @@ final class ScoreHud implements Listener
         );
 
         unset(
-            $this->lines[$this->key($player)]
+            $this->lines[$this->key($player)],
+            $this->titles[$this->key($player)]
         );
     }
 

@@ -29,8 +29,10 @@ use pocketmine\world\Position;
  *
  * Flow per open (all client-side only, the server world is never touched):
  *
- *  1. Take the player's current block position (floored feet). Its chunk is
- *     guaranteed loaded for that player.
+ *  1. Take the player's current block position and offset it by -2 X and
+ *     +2 Y. A fake chest exactly at the feet block is rendered inside the
+ *     player and shoves them; the offset keeps it in the same loaded chunk
+ *     column area but clear of the body.
  *  2. Remember the real block state there and send a fake chest +
  *     chest tile (with the window title) to that one player.
  *  3. Point the inventory holder at the fake position and call
@@ -93,9 +95,22 @@ final class VirtualWindow implements Listener
 
         $playerPos = $player->getPosition();
         $world = $player->getWorld();
-        $fx = $playerPos->getFloorX();
-        $fy = $playerPos->getFloorY();
+        // Offset so the fake chest never spawns inside the player's body and
+        // pushes them: 2 up, 2 on -X (same Z). Still within the loaded area
+        // around the player, so the client accepts the ContainerOpen.
+        $fx = $playerPos->getFloorX() - 2;
+        $fy = $playerPos->getFloorY() + 2;
         $fz = $playerPos->getFloorZ();
+        if (method_exists($world, 'getMinY') && method_exists($world, 'getMaxY')) {
+            try {
+                /** @var int $minY */
+                $minY = $world->getMinY();
+                /** @var int $maxY */
+                $maxY = $world->getMaxY();
+                $fy = max($minY, min($maxY - 1, $fy));
+            } catch (\Throwable) {
+            }
+        }
         $fakePos = new Position($fx, $fy, $fz, $world);
 
         $realStateId = $world->getBlock($fakePos)->getStateId();

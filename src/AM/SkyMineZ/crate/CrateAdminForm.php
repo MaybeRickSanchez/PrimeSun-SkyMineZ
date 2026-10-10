@@ -148,8 +148,7 @@ final class CrateAdminForm
                         return;
                     }
 
-                    $position = TargetResolver::lookedAtPosition($who)
-                        ?? $who->getPosition();
+                    $position = TargetResolver::playerMiddle($who);
 
                     $color = $crate->getColor();
                     $keys = $crate->getKeys();
