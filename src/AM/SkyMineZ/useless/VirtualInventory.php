@@ -13,13 +13,14 @@ use pocketmine\world\Position;
  *
  * PocketMine-MP 5.44+ (InventoryManager::onCurrentWindowChange) only knows
  * how to open BlockInventory windows via ContainerOpenPacket. A plain
- * SimpleInventory throws LogicException("Unsupported inventory type") and
- * crashes the server thread while handling the form/inventory packet.
+ * SimpleInventory throws LogicException("Unsupported inventory type").
  *
  * This subclasses SimpleInventory (so all existing count/take/give helpers
  * keep working) and tags it with a BlockInventory holder. The holder is the
- * opener's position at open time; no real chest block is required, the
- * position is only echoed back in the ContainerOpen packet.
+ * opener's current block position at open time (see VirtualWindow): a fake
+ * chest block is sent to the client at that position first, otherwise the
+ * client shows nothing while the server thinks a window is open and the
+ * player gets soft-locked (can walk/chat but cannot open inventory).
  */
 final class VirtualInventory extends SimpleInventory implements BlockInventory
 {
@@ -36,5 +37,10 @@ final class VirtualInventory extends SimpleInventory implements BlockInventory
     public function getHolder(): Position
     {
         return $this->holder;
+    }
+
+    public function setHolder(Position $holder): void
+    {
+        $this->holder = $holder;
     }
 }

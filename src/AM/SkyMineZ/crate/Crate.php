@@ -450,7 +450,8 @@ final class Crate
         if (
             !$this->readOnlyInventory->open(
                 $player,
-                $inventory
+                $inventory,
+                $this->name . ' Preview'
             )
         ) {
             return false;
@@ -600,25 +601,19 @@ final class Crate
         /*
          * A fresh virtual window per opening: the real shulker inventory is
          * never exposed, so hoppers cannot steal the spinning items and two
-         * openings can never share state.
+         * openings can never share state. Opened through the fake-chest
+         * helper so the client actually shows it (plain setCurrentWindow on
+         * air leaves an invisible window and soft-locks the inventory).
          */
         $inventory = new VirtualInventory($player->getPosition(), 27);
 
         $this->animationInventory = $inventory;
 
-        $this->readOnlyInventory->add(
-            $inventory
-        );
-
-        if (!$player->setCurrentWindow($inventory)) {
+        if (!$this->readOnlyInventory->open($player, $inventory, $this->name)) {
             $this->busy = false;
             $this->openingPlayerId = null;
             $this->pendingReward = null;
             $this->animationInventory = null;
-
-            $this->readOnlyInventory->remove(
-                $inventory
-            );
 
             return false;
         }
@@ -1221,13 +1216,9 @@ final class Crate
                         }
 
                         // ReadOnlyInventory auto-removed this window on close
-                        // (MONITOR), so re-arm it before reopening or the
-                        // spin items become stealable.
-                        $this->readOnlyInventory->add($inventory);
-
-                        if (!$player->setCurrentWindow($inventory)) {
-                            $this->readOnlyInventory->remove($inventory);
-                        }
+                        // (MONITOR), so reopening through it re-arms the
+                        // read-only flag and the fake chest together.
+                        $this->readOnlyInventory->open($player, $inventory, $this->name);
                     }
                 ),
                 1

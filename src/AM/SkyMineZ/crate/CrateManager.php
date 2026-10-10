@@ -49,9 +49,15 @@ final class CrateManager
     public function __construct(
         private Main $main
     ) {
+        try {
+            $virtualWindow = $this->main->getVirtualWindow();
+        } catch (\Error) {
+            $virtualWindow = null;
+        }
         $this->readOnlyInventory = new ReadOnlyInventory(
             $this->main->getServer(),
-            $this->main
+            $this->main,
+            $virtualWindow
         );
     }
 

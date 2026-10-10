@@ -360,7 +360,13 @@ final class ComposerManager
             'z' => $position->z
         ];
 
-        if (!$player->setCurrentWindow($inventory)) {
+        try {
+            $opened = $this->main->getVirtualWindow()->open($player, $inventory, $recipes[$recipeId]['name'] ?? 'Composer');
+        } catch (\Error) {
+            $opened = $player->setCurrentWindow($inventory);
+        }
+
+        if (!$opened) {
             unset($this->inventories[$id], $this->sessions[$id]);
 
             return false;

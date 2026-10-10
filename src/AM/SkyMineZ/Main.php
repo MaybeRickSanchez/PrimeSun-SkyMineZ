@@ -41,6 +41,7 @@ use AM\SkyMineZ\tools\ToolListener;
 use AM\SkyMineZ\tools\ToolManager;
 use AM\SkyMineZ\trade\TradeListener;
 use AM\SkyMineZ\trade\TradeManager;
+use AM\SkyMineZ\useless\VirtualWindow;
 use AM\SkyMineZ\wand\PositionWandListener;
 use AM\SkyMineZ\warp\WarpManager;
 use JsonException;
@@ -105,6 +106,7 @@ final class Main extends PluginBase
     private TradeManager $tradeManager;
     private LagMaker $lagMaker;
     private ScoreHud $scoreHud;
+    private VirtualWindow $virtualWindow;
 
     private SelectionManager $selectionManager;
 
@@ -144,6 +146,12 @@ final class Main extends PluginBase
     protected function onEnable(): void
     {
         $config = $this->getConfigManager();
+
+        // Fake-chest helper for virtual windows. Constructing it registers
+        // its close/quit restore handlers, and managers below use it at
+        // open time so the client actually shows crate/composer/trade
+        // windows instead of soft-locking with an invisible window.
+        $this->virtualWindow = new VirtualWindow($this->getServer(), $this);
 
         $this->moneyEconomy = new MoneyEconomy(
             new Config(
@@ -482,6 +490,11 @@ final class Main extends PluginBase
     public function getLagMaker(): LagMaker
     {
         return $this->lagMaker;
+    }
+
+    public function getVirtualWindow(): VirtualWindow
+    {
+        return $this->virtualWindow;
     }
 
     private function registerListeners(): void

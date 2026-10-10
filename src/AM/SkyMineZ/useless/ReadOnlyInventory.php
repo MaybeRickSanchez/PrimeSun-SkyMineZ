@@ -28,7 +28,8 @@ final class ReadOnlyInventory
 
     public function __construct(
         private Server $server,
-        PluginBase $plugin
+        PluginBase $plugin,
+        private ?VirtualWindow $virtualWindow = null
     ) {
         $pluginManager = $server->getPluginManager();
 
@@ -120,15 +121,16 @@ final class ReadOnlyInventory
 
     public function open(
         Player $player,
-        Inventory $inventory
+        Inventory $inventory,
+        string $title = 'Chest'
     ): bool {
         $this->add($inventory);
 
-        if (
-            !$player->setCurrentWindow(
-                $inventory
-            )
-        ) {
+        $opened = $inventory instanceof VirtualInventory && $this->virtualWindow !== null
+            ? $this->virtualWindow->open($player, $inventory, $title)
+            : $player->setCurrentWindow($inventory);
+
+        if (!$opened) {
             $this->remove($inventory);
 
             return false;

@@ -392,7 +392,21 @@ final class TradeManager
         $this->byPlayer[$aName] = $id;
         $this->byPlayer[$bName] = $id;
 
-        if (!$a->setCurrentWindow($inventory) || !$b->setCurrentWindow($inventory)) {
+        // Shared storage, but each side gets its own fake chest at its own
+        // current position: the holder is retargeted between the two opens
+        // so each ContainerOpen points at a loaded chunk for that viewer.
+        // On any half-open the session is cancelled, which closes the other
+        // side and restores its fake block, so nobody is left stuck.
+        try {
+            $windows = $this->main->getVirtualWindow();
+            $openedA = $windows->open($a, $inventory, 'Trade');
+            $openedB = $openedA && $windows->open($b, $inventory, 'Trade');
+        } catch (\Error) {
+            $openedA = $a->setCurrentWindow($inventory);
+            $openedB = $openedA && $b->setCurrentWindow($inventory);
+        }
+
+        if (!$openedA || !$openedB) {
             $this->cancel(
                 $id,
                 Messages::get($this->main, Messages::TRADE_OPEN_FAIL)

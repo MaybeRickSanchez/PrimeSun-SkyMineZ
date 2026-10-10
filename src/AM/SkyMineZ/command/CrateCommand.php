@@ -100,18 +100,13 @@ final class CrateCommand extends BaseCommand
                     return;
                 }
 
+                // Prefer the block being looked at, but fall back to the
+                // player's current position so the command works while
+                // looking at the sky. The Position Wand (pos1/pos2) is
+                // untouched and remains the way to pick cuboid corners.
                 $position = TargetResolver::lookedAtPosition(
                     $player
-                );
-
-                if ($position === null) {
-                    $this->error(
-                        $player,
-                        Messages::get($this->plugin, Messages::COMMON_LOOK_AT_BLOCK)
-                    );
-
-                    return;
-                }
+                ) ?? $player->getPosition();
 
                 $crate = $this->plugin->getCrateManager()->create(
                     $name,
@@ -227,18 +222,11 @@ final class CrateCommand extends BaseCommand
                     return;
                 }
 
+                // Same fallback as create: looked-at block first, player's
+                // current position otherwise. Wand selection is separate.
                 $position = TargetResolver::lookedAtPosition(
                     $player
-                );
-
-                if ($position === null) {
-                    $this->error(
-                        $player,
-                        Messages::get($this->plugin, Messages::COMMON_LOOK_AT_BLOCK)
-                    );
-
-                    return;
-                }
+                ) ?? $player->getPosition();
 
                 $color = $crate->getColor();
                 $keys = $crate->getKeys();
